@@ -1,0 +1,14 @@
+PreCommit:
+  RuboCop:
+    enabled: true
+    auto_correct: true
+    on_warn: fail
+
+  TrailingWhitespace:
+    enabled: true
+    auto_correct: true
+
+  TestSuite:
+    enabled: true
+    command: ['bundle', 'exec', 'rake', 'test']
+    on_warn: fail

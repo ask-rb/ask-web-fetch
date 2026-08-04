@@ -1,0 +1,45 @@
+plugins:
+  - rubocop-rake
+  - rubocop-minitest
+
+AllCops:
+  NewCops: enable
+  TargetRubyVersion: 3.2
+  Exclude:
+    - vendor/**/*
+    - gemfiles/**/*
+  SuggestExtensions: false
+
+Metrics/ClassLength:
+  Max: 550
+Metrics/AbcSize:
+  Max: 80
+Metrics/CyclomaticComplexity:
+  Max: 25
+Metrics/MethodLength:
+  Max: 80
+  CountAsOne:
+    - array
+    - hash
+    - heredoc
+Metrics/ModuleLength:
+  Max: 550
+
+# Development dependencies conventionally live in the gemspec in this
+# ecosystem (see ask-web-search); keep them there.
+Gemspec/DevelopmentDependencies:
+  Enabled: false
+
+# RubyGems requires the entry point to match the gem name (ask-web-fetch.rb).
+Naming/FileName:
+  Exclude:
+    - lib/ask-web-fetch.rb
+
+# Spec-style describe blocks are intentionally long.
+Metrics/BlockLength:
+  Exclude:
+    - test/**/*
+    - ask-*.gemspec
+
+Minitest/MultipleAssertions:
+  Enabled: false
