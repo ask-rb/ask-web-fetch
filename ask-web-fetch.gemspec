@@ -11,9 +11,10 @@ Gem::Specification.new do |spec|
   spec.summary = 'Web fetch tool for the ask-rb ecosystem'
   spec.description = 'Provides Ask::Tools::WebFetch, a tool that fetches a URL ' \
                      'and converts its content to clean markdown for LLM ' \
-                     'consumption. Pure Ruby (Net::HTTP + Nokogiri + ' \
-                     'reverse_markdown): no external service or API key required. ' \
-                     'Works with any ask-rb chat or agent.'
+                     'consumption. Defaults to a pure Ruby backend (Net::HTTP + ' \
+                     'Nokogiri + reverse_markdown) with an automatic Jina Reader ' \
+                     'fallback for JS-rendered or blocked pages. Works with any ' \
+                     'ask-rb chat or agent.'
   spec.homepage = 'https://github.com/ask-rb/ask-web-fetch'
   spec.license = 'MIT'
 

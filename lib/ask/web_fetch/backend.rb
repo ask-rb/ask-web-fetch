@@ -1,0 +1,66 @@
+# frozen_string_literal: true
+
+require_relative 'version'
+
+module Ask
+  module WebFetch
+    # Raised by backends on any failure; the tool catches it and tries the
+    # next backend in the chain.
+    class Error < StandardError; end
+
+    # A backend that failed to fetch (network error, non-2xx, challenge
+    # page, non-HTML response).
+    class FetchError < Error; end
+
+    # A backend that fetched the page but found nothing usable in it.
+    class EmptyContentError < Error; end
+
+    # Base class for fetch backends, plus the errors they raise.
+    #
+    # A backend turns a URL into LLM-ready markdown. To add a new backend:
+    #
+    #   1. subclass Backend and implement #fetch(url)
+    #   2. #fetch must return { title: String|nil, content: String }
+    #   3. #fetch must raise FetchError (hard failure) or
+    #      EmptyContentError (page fetched but nothing usable) on failure
+    #   4. register the class in Ask::Tools::WebFetch.backends
+    #
+    # The tool tries each backend in order and returns the first success.
+    class Backend
+      # Identity sent on every request, browser-like plus a gem tag.
+      USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' \
+                   'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 ' \
+                   "ask-web-fetch/#{Ask::WebFetch::VERSION}".freeze
+
+      # Content shorter than this is treated as a page with no usable
+      # content (e.g. a JS-rendered shell with nothing server-side).
+      MIN_CONTENT_LENGTH = 100
+
+      # Cloudflare-style anti-bot signatures. Deliberately narrow:
+      # challenge/interstitial pages carry these markers, while legitimate
+      # pages can contain the word "captcha" in unrelated config/JS (e.g.
+      # Wikipedia embeds an hcaptcha edit-config flag on every page).
+      CHALLENGE_RE = /just a moment|checking your browser|cf-chl/i
+
+      def self.backend_name
+        name.split('::').last
+      end
+
+      # Fetches +url+ and returns { title: String|nil, content: String }.
+      # Raises FetchError or EmptyContentError on failure.
+      def fetch(url)
+        raise NotImplementedError, "#{self.class} must implement #fetch(url)"
+      end
+
+      private
+
+      def challenge_page?(body)
+        body.to_s.match?(CHALLENGE_RE)
+      end
+
+      def usable_content?(content)
+        content.to_s.strip.length >= MIN_CONTENT_LENGTH
+      end
+    end
+  end
+end

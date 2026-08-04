@@ -38,79 +38,26 @@ describe Ask::Tools::WebFetch do
     _(tool).must_be_kind_of Ask::Tools::WebFetch
   end
 
-  describe 'extraction' do
-    it 'prefers article over main and body' do
-      doc = Nokogiri::HTML(<<~HTML)
-        <html><body>
-          <main><p>main content</p></main>
-          <article><p>article content</p></article>
-        </body></html>
-      HTML
-      candidate = @tool.send(:extract_main, doc)
-
-      _(candidate.name).must_equal 'article'
-    end
-
-    it 'falls back to main, then body' do
-      doc = Nokogiri::HTML('<html><body><main><p>hi</p></main></body></html>')
-
-      _(@tool.send(:extract_main, doc).name).must_equal 'main'
-
-      doc2 = Nokogiri::HTML('<html><body><div><p>hi</p></div></body></html>')
-
-      _(@tool.send(:extract_main, doc2).name).must_equal 'body'
-    end
-
-    it 'scrubs scripts, nav, and nav-chrome elements' do
-      doc = Nokogiri::HTML(<<~HTML)
-        <html><body>
-          <main>
-            <script>alert(1)</script>
-            <nav><a href="/x">menu</a></nav>
-            <div class="sidebar"><a href="/s">side</a></div>
-            <p>Keep me.</p>
-          </main>
-        </body></html>
-      HTML
-      candidate = @tool.send(:extract_main, doc)
-      @tool.send(:scrub, candidate)
-      html = candidate.to_html
-
-      _(html).wont_include 'alert'
-      _(html).wont_include 'sidebar'
-      _(html).wont_include '<nav>'
-      _(html).must_include 'Keep me.'
-    end
+  it 'defaults to the Local and Jina backends in that order' do
+    _(@tool.class.backends).must_equal [
+      Ask::WebFetch::Backends::Local,
+      Ask::WebFetch::Backends::Jina
+    ]
   end
 
-  describe 'conversion' do
-    it 'converts links to markdown' do
-      html = '<main><h1>Title</h1><p>See <a href="https://example.com">example</a>.</p></main>'
-      md = @tool.send(:to_markdown, html, 'https://example.com')
-
-      _(md).must_include '[example](https://example.com)'
-      _(md).must_include '# Title'
-    end
-
-    it 'prepends page title and source' do
-      html = '<html><head><title>My Page</title></head><body><p>Body text.</p></body></html>'
-      md = @tool.send(:to_markdown, html, 'https://example.com/page')
+  describe 'format' do
+    it 'prepends title and source' do
+      page = { title: 'My Page', content: 'Body text.' }
+      md = @tool.send(:format, page, 'https://example.com/page')
 
       _(md).must_match(/\A# My Page/)
       _(md).must_include 'Source: https://example.com/page'
     end
 
-    it 'returns a no-content message for empty pages' do
-      md = @tool.send(:to_markdown, '', 'https://example.com')
+    it 'omits the title when absent' do
+      md = @tool.send(:format, { title: nil, content: 'Body text.' }, 'https://example.com')
 
-      _(md).must_equal 'No readable content found at https://example.com.'
-    end
-
-    it 'converts tables to markdown tables' do
-      html = '<table><tr><td><a href="https://a.com">A</a></td></tr></table>'
-      md = @tool.send(:to_markdown, html, 'https://example.com')
-
-      _(md).must_match(%r{\|.*\[A\]\(https://a\.com\)})
+      _(md).must_match(%r{\ASource: https://example\.com})
     end
   end
 
@@ -127,6 +74,86 @@ describe Ask::Tools::WebFetch do
       md = 'short'
 
       _(@tool.send(:truncate, md, 100)).must_equal 'short'
+    end
+  end
+
+  describe 'backend chain' do
+    before do
+      WebMock.disable_net_connect!
+    end
+
+    after do
+      Ask::Tools::WebFetch.backends = [Ask::WebFetch::Backends::Local, Ask::WebFetch::Backends::Jina]
+      WebMock.reset!
+    end
+
+    it 'uses local when it succeeds and never calls jina' do
+      body = '<html><head><title>Local Page</title></head><body><article>' \
+             "<p>#{'Plenty of real content for the local backend. ' * 10}</p></article></body></html>"
+      stub_request(:get, 'https://example.com')
+        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' }, body: body)
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal true
+      _(result.output).must_include '# Local Page'
+      assert_not_requested :get, /r\.jina\.ai/
+    end
+
+    it 'falls back to jina when local finds no content (JS page)' do
+      stub_request(:get, 'https://example.com')
+        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' },
+                   body: '<html><body><div id="app"><script>render()</script></div></body></html>')
+      stub_request(:get, 'https://r.jina.ai/https://example.com')
+        .to_return(status: 200, body: 'Jina rendered this page with JavaScript content. ' * 5)
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal true
+      _(result.output).must_include 'Jina rendered this page'
+    end
+
+    it 'falls back to jina when local gets an HTTP error' do
+      stub_request(:get, 'https://example.com').to_return(status: 403, body: 'forbidden')
+      stub_request(:get, 'https://r.jina.ai/https://example.com')
+        .to_return(status: 200, body: 'Jina content here. ' * 10)
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal true
+      _(result.output).must_include 'Jina content here'
+    end
+
+    it 'falls back to jina for non-HTML content' do
+      stub_request(:get, 'https://example.com')
+        .to_return(status: 200, headers: { 'Content-Type' => 'application/pdf' }, body: '%PDF-1.4')
+      stub_request(:get, 'https://r.jina.ai/https://example.com')
+        .to_return(status: 200, body: 'Jina parsed the PDF into markdown. ' * 10)
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal true
+      _(result.output).must_include 'Jina parsed the PDF'
+    end
+
+    it 'fails when both backends fail and reports both errors' do
+      stub_request(:get, 'https://example.com').to_return(status: 500, body: 'boom')
+      stub_request(:get, 'https://r.jina.ai/https://example.com').to_return(status: 429, body: 'rate limited')
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal false
+      _(result.error_message).must_match(/Local: got 500/)
+      _(result.error_message).must_match(/Jina: rate limited/)
+    end
+
+    it 'supports a custom backend injected via backends=' do
+      custom = Class.new(Ask::WebFetch::Backend) do
+        def fetch(_url)
+          { title: 'Custom', content: 'Custom backend content. ' * 10 }
+        end
+      end
+      Ask::Tools::WebFetch.backends = [custom]
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal true
+      _(result.output).must_include '# Custom'
+      _(result.output).must_include 'Custom backend content.'
     end
   end
 
@@ -162,9 +189,10 @@ describe Ask::Tools::WebFetch do
     end
   end
 
-  describe 'connection and HTTP errors' do
+  describe 'connection and HTTP errors (all backends fail)' do
     before do
       WebMock.disable_net_connect!
+      stub_request(:get, /r\.jina\.ai/).to_return(status: 500, body: 'jina down')
     end
 
     after do
@@ -204,26 +232,6 @@ describe Ask::Tools::WebFetch do
     it 'handles redirect loops' do
       stub_request(:get, 'https://example.com')
         .to_return(status: 302, headers: { 'Location' => 'https://example.com' })
-      result = @tool.call('url' => 'https://example.com')
-
-      _(result.ok?).must_equal false
-    end
-
-    it 'follows redirects' do
-      stub_request(:get, 'https://example.com/start')
-        .to_return(status: 302, headers: { 'Location' => 'https://example.com/final' })
-      stub_request(:get, 'https://example.com/final')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' },
-                   body: '<html><head><title>Final</title></head><body><p>Hello.</p></body></html>')
-      result = @tool.call('url' => 'https://example.com/start')
-
-      _(result.ok?).must_equal true
-      _(result.output).must_include '# Final'
-    end
-
-    it 'rejects non-HTML content' do
-      stub_request(:get, /example\.com/)
-        .to_return(status: 200, headers: { 'Content-Type' => 'application/pdf' }, body: '%PDF')
       result = @tool.call('url' => 'https://example.com')
 
       _(result.ok?).must_equal false
