@@ -1,3 +1,13 @@
+## [0.3.1] — 2026-08-07
+
+### Fixed
+
+- Crawl4AI backend read timeout raised 30s → 90s: headless-browser rendering
+  (plus first-request pool warmup) is far slower than plain-HTML fetches,
+  and the crawl itself gets `crawler_config.timeout` of 60s — the HTTP read
+  must allow that plus headroom. Without this, real crawls hit
+  `Net::ReadTimeout` and fell through to Local.
+
 ## [0.3.0] — 2026-08-07
 
 ### Added

@@ -22,7 +22,10 @@ module Ask
       class Crawl4Ai < Backend
         DEFAULT_URL = 'http://localhost:11235'
         OPEN_TIMEOUT = 5
-        READ_TIMEOUT = 30
+        # Browser rendering (plus first-request pool warmup) is slow — the
+        # crawl itself gets crawler_config.timeout, so the HTTP read must
+        # allow that plus headroom, unlike the plain-HTML backends.
+        READ_TIMEOUT = 90
         CRAWL_TIMEOUT = 60
 
         class << self
