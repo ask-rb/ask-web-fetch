@@ -104,7 +104,12 @@ module Ask
 
           markdown = result.dig('markdown', 'fit_markdown').to_s
           markdown = result.dig('markdown', 'raw_markdown').to_s if markdown.strip.empty?
-          { title: result.dig('metadata', 'title'), content: markdown }
+          {
+            title: result.dig('metadata', 'title'),
+            description: result.dig('metadata', 'description') ||
+              result.dig('metadata', 'og_description'),
+            content: markdown
+          }
         rescue JSON::ParserError => e
           raise FetchError, "Crawl4AI bad JSON response: #{e.message}"
         end

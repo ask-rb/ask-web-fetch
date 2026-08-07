@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    ask-web-fetch (0.3.2)
+    ask-web-fetch (0.3.3)
       ask-tools (>= 0.1)
       nokogiri (>= 1.15)
       reverse_markdown (>= 2.0)
@@ -72,7 +72,7 @@ CHECKSUMS
   ask-core (0.9.0) sha256=dfdb2151abc0daec9bf4079570467feece9b706bc42af05669a54a931fc7256d
   ask-schema (0.1.1) sha256=1be1c107c2f7cdacde9cf8d4dfc004e586f652c2b979e1829fab748f66ca98bd
   ask-tools (0.5.0) sha256=74af0eacee119e526a725360686142282ddde9c540077a0f1efe31ebae2c2066
-  ask-web-fetch (0.3.2)
+  ask-web-fetch (0.3.3)
   bigdecimal (4.1.2) sha256=53d217666027eab4280346fba98e7d5b66baaae1b9c3c1c0ffe89d48188a3fbd
   bundler (4.0.12) sha256=7f8b757d28dfb636e7b24fba2344ac6dd13b5b24f4b46d62573d483f211825ac
   crack (1.0.1) sha256=ff4a10390cd31d66440b7524eb1841874db86201d5b70032028553130b6d4c7e

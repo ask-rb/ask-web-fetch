@@ -21,12 +21,12 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
     'Some markdown content that is long enough to pass the usable threshold. ' * 3
   end
 
-  def crawl_body(markdown: long_content, title: 'Example Page', success: true, error_message: nil)
+  def crawl_body(markdown: long_content, title: 'Example Page', description: 'The page described by its own metadata.', success: true, error_message: nil)
     result = {
       url: 'https://example.com',
       success: success,
       markdown: { fit_markdown: markdown, raw_markdown: markdown },
-      metadata: { title: title }
+      metadata: { title: title, description: description }
     }
     result[:error_message] = error_message if error_message
     { success: true, results: [result] }.to_json
@@ -57,12 +57,31 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
     assert_requested(:post, /crawl4ai\.test/) { |req| req.headers['Authorization'] == 'Bearer secret' }
   end
 
-  it 'returns the fit markdown and title for a successful crawl' do
+  it 'returns the fit markdown, title, and meta description for a successful crawl' do
     stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: crawl_body)
     page = @backend.fetch('https://example.com')
 
     _(page[:title]).must_equal 'Example Page'
+    _(page[:description]).must_equal 'The page described by its own metadata.'
     _(page[:content]).must_equal long_content
+  end
+
+  it 'falls back to og_description when description is missing' do
+    body = {
+      success: true,
+      results: [
+        {
+          url: 'https://example.com',
+          success: true,
+          markdown: { fit_markdown: long_content, raw_markdown: long_content },
+          metadata: { title: 'Example Page', og_description: 'OG fallback description.' }
+        }
+      ]
+    }.to_json
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: body)
+    page = @backend.fetch('https://example.com')
+
+    _(page[:description]).must_equal 'OG fallback description.'
   end
 
   it 'falls back to raw markdown when fit markdown is empty' do
