@@ -35,7 +35,7 @@ module Ask
             raise FetchError, 'challenge page from Jina' if challenge_page?(body)
             raise EmptyContentError, 'empty response from Jina' unless usable_content?(body)
 
-            { title: nil, content: body.strip }
+            { title: nil, description: nil, content: body.strip }
           when '429'
             raise FetchError, 'rate limited by Jina (429)'
           when '401', '403'

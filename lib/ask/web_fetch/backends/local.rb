@@ -38,8 +38,10 @@ module Ask
           raise FetchError, "#{e.class}: #{e.message}"
         end
 
-        # Parses +html+ and returns { title:, content: } where content is
-        # clean markdown.
+        # Parses +html+ and returns { title:, description:, content: } where
+        # content is clean markdown and description is the page's own meta
+        # description (meta name=description, then og:description) — what the
+        # site says about itself, free and authoritative.
         def to_markdown(html, _url)
           doc = Nokogiri::HTML(html)
           candidate = extract_main(doc)
@@ -47,7 +49,13 @@ module Ask
           markdown = ReverseMarkdown.convert(candidate.to_html, unknown_tags: :bypass, github_flavored: true)
           markdown = clean(markdown)
           title = doc.at('title')&.text&.strip
-          { title: title, content: markdown }
+          { title: title, description: meta_description(doc), content: markdown }
+        end
+
+        def meta_description(doc)
+          desc = doc.at('meta[name="description"]')&.[]('content')&.strip
+          desc = doc.at('meta[property="og:description"]')&.[]('content')&.strip if desc.to_s.empty?
+          desc
         end
 
         private
