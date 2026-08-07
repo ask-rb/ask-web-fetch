@@ -138,10 +138,10 @@ describe Ask::WebFetch::Backends::Local do
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
     end
 
-    it 'raises FetchError for HTTP errors' do
+    it 'raises ServerError for HTTP 5xx errors' do
       stub_request(:get, 'https://example.com').to_return(status: 500, body: 'boom')
 
-      _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+      _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
     end
 
     it 'raises FetchError for redirect loops' do
@@ -164,10 +164,32 @@ describe Ask::WebFetch::Backends::Local do
       _(page[:title]).must_equal 'Final'
     end
 
-    it 'wraps network errors in FetchError' do
+    it 'wraps network errors in TimeoutError' do
       stub_request(:get, 'https://example.com').to_raise(Errno::ECONNREFUSED.new)
 
-      _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+      _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::TimeoutError
+    end
+
+    it 'wraps timeouts in TimeoutError' do
+      stub_request(:get, 'https://example.com').to_timeout
+
+      _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::TimeoutError
+    end
+
+    it 'raises FetchError for a dead URL (404)' do
+      stub_request(:get, 'https://example.com/missing').to_return(status: 404, body: 'nope')
+
+      err = _(-> { @backend.fetch('https://example.com/missing') }).must_raise Ask::WebFetch::FetchError
+      _(err.message).must_include 'got 404 from'
+    end
+
+    it 'raises ServerError for a 429 or 5xx' do
+      stub_request(:get, 'https://example.com').to_return(status: 503, body: 'busy')
+
+      _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
+
+      stub_request(:get, 'https://example.com').to_return(status: 429, body: 'slow down')
+      _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
     end
   end
 end

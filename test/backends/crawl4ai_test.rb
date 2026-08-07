@@ -116,10 +116,10 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
     _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
   end
 
-  it 'raises FetchError on server errors' do
+  it 'raises ServerError when the service itself answers 5xx' do
     stub_request(:post, /crawl4ai\.test/).to_return(status: 503, body: 'unavailable')
 
-    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
   end
 
   it 'raises EmptyContentError when nothing usable came back' do
@@ -134,16 +134,38 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
     _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
   end
 
-  it 'wraps connection errors in FetchError' do
+  it 'wraps connection errors in TimeoutError' do
     stub_request(:post, /crawl4ai\.test/).to_raise(Errno::ECONNREFUSED.new)
 
-    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::TimeoutError
   end
 
-  it 'wraps timeouts in FetchError' do
+  it 'wraps timeouts in TimeoutError' do
     stub_request(:post, /crawl4ai\.test/).to_timeout
 
-    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::TimeoutError
+  end
+
+  it 'raises FetchError when the rendered page is a 4xx error page' do
+    result = JSON.parse(crawl_body)['results'].first.merge('status_code' => 404)
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: {success: true, results: [result]}.to_json)
+
+    err = _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+    _(err.message).must_include 'Crawl4AI got 404 at https://example.com'
+  end
+
+  it 'raises ServerError when the rendered page is a 429' do
+    result = JSON.parse(crawl_body)['results'].first.merge('status_code' => 429)
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: {success: true, results: [result]}.to_json)
+
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
+  end
+
+  it 'raises ServerError when the rendered page is a 5xx' do
+    result = JSON.parse(crawl_body)['results'].first.merge('status_code' => 503)
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: {success: true, results: [result]}.to_json)
+
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
   end
 
   it 'raises FetchError on challenge pages' do

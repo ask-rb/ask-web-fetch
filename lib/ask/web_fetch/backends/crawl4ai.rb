@@ -59,7 +59,7 @@ module Ask
           page
         rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED,
                Errno::ECONNRESET, SocketError, URI::InvalidURIError => e
-          raise FetchError, "Crawl4AI #{e.class}: #{e.message}"
+          raise TimeoutError, "Crawl4AI #{e.class}: #{e.message}"
         end
 
         private
@@ -88,7 +88,9 @@ module Ask
           when '401', '403'
             raise FetchError, "Crawl4AI auth error (#{res.code})"
           else
-            raise FetchError, "Crawl4AI returned #{res.code}"
+            # The /crawl service itself answering 5xx (or 4xx beyond auth)
+            # is a service-side problem — transient, retrying may succeed.
+            raise ServerError, "Crawl4AI returned #{res.code}"
           end
         end
 
@@ -100,6 +102,15 @@ module Ask
           result = Array(data['results']).first || {}
           if result['success'] == false
             raise FetchError, "Crawl4AI crawl failed: #{result['error_message'] || 'unknown error'}"
+          end
+
+          # A rendered page is only content when it actually loaded — a 4xx
+          # error page renders fine but is not the page. Crawl4AI reports
+          # the target's status on the result; without this check a 404
+          # shell passes as a successful fetch.
+          status = result['status_code'].to_i
+          if status >= 400
+            raise(status == 429 || status >= 500 ? ServerError : FetchError, "Crawl4AI got #{status} at #{url}")
           end
 
           markdown = result.dig('markdown', 'fit_markdown').to_s

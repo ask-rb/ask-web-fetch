@@ -37,10 +37,10 @@ describe Ask::WebFetch::Backends::Jina do
     assert_nil page[:title]
   end
 
-  it 'raises FetchError on rate limit (429)' do
+  it 'raises ServerError on rate limit (429)' do
     stub_request(:get, /r\.jina\.ai/).to_return(status: 429, body: 'rate limited')
 
-    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
   end
 
   it 'raises FetchError on access errors (401/403)' do
@@ -49,10 +49,10 @@ describe Ask::WebFetch::Backends::Jina do
     _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
   end
 
-  it 'raises FetchError on server errors' do
+  it 'raises ServerError on server errors' do
     stub_request(:get, /r\.jina\.ai/).to_return(status: 503, body: 'unavailable')
 
-    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
   end
 
   it 'raises FetchError on challenge pages' do
@@ -67,9 +67,18 @@ describe Ask::WebFetch::Backends::Jina do
     _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
   end
 
-  it 'wraps timeouts in FetchError' do
+  it 'wraps timeouts in TimeoutError' do
     stub_request(:get, /r\.jina\.ai/).to_timeout
 
-    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::TimeoutError
+  end
+
+  it 'raises ServerError on rate limits and 5xx' do
+    stub_request(:get, /r\.jina\.ai/).to_return(status: 429, body: 'rate limited')
+
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
+
+    stub_request(:get, /r\.jina\.ai/).to_return(status: 503, body: 'unavailable')
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
   end
 end

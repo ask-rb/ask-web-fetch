@@ -8,12 +8,21 @@ module Ask
     # next backend in the chain.
     class Error < StandardError; end
 
-    # A backend that failed to fetch (network error, non-2xx, challenge
-    # page, non-HTML response).
+    # A backend that failed to fetch because the URL itself is bad — 4xx,
+    # challenge page, non-HTML response, redirect loop. Deterministic:
+    # retrying won't change the outcome.
     class FetchError < Error; end
 
     # A backend that fetched the page but found nothing usable in it.
     class EmptyContentError < Error; end
+
+    # Network-level failure — timeout, connection refused/reset, bad
+    # socket. Transient: the same URL may succeed on retry.
+    class TimeoutError < Error; end
+
+    # The service or the target server answered 5xx/429. Transient:
+    # retrying after backoff may succeed.
+    class ServerError < Error; end
 
     # Base class for fetch backends, plus the errors they raise.
     #

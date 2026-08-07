@@ -35,7 +35,7 @@ module Ask
           page
         rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED,
                Errno::ECONNRESET, SocketError, URI::InvalidURIError => e
-          raise FetchError, "#{e.class}: #{e.message}"
+          raise TimeoutError, "#{e.class}: #{e.message}"
         end
 
         # Parses +html+ and returns { title:, description:, content: } where
@@ -75,7 +75,11 @@ module Ask
             res = http.request(req)
             return [res.body, res['content-type'].to_s] if res.code.start_with?('2')
 
-            raise FetchError, "got #{res.code} from #{url}" unless res.code.start_with?('3') && res['location']
+            unless res.code.start_with?('3') && res['location']
+              # 4xx (other than 429) = the URL is dead; 429/5xx = transient.
+              code = res.code.to_i
+              raise(code == 429 || code >= 500 ? ServerError : FetchError, "got #{res.code} from #{url}")
+            end
             raise FetchError, "hit a redirect loop at #{url}" if (hops += 1) > MAX_REDIRECTS
 
             uri = URI.join(uri, res['location'])
