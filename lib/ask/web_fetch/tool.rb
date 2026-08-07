@@ -3,22 +3,34 @@
 require 'ask-tools'
 require_relative '../web_fetch/backend'
 require_relative '../web_fetch/backends/local'
+require_relative '../web_fetch/backends/crawl4ai'
 require_relative '../web_fetch/backends/jina'
 
 module Ask
   module Tools
     # Fetches a URL and returns its content as clean markdown for LLM
     # consumption. Tries each configured backend in order and returns the
-    # first success, so a blocked or JS-rendered page falls through from the
-    # local fetcher to Jina Reader.
+    # first success.
+    #
+    # Chain: Crawl4AI first (self-hosted headless-Chromium renderer; used
+    # when the CRAWL4AI_URL service is present, fails fast when it isn't),
+    # then the local fetcher, with Jina Reader as the last resort.
     class WebFetch < Ask::Tool
       DEFAULT_MAX_CHARS = 20_000
 
-      # Backend chain, tried in order. Swap or extend for future backends
-      # (e.g. a self-hosted crawler); each must subclass
-      # Ask::WebFetch::Backend and implement #fetch(url).
+      # Backend chain, tried in order. Crawl4AI leads when configured
+      # (CRAWL4AI_URL), so a present self-hosted renderer is preferred;
+      # otherwise Local, with Jina as the last resort. Swap or extend for
+      # future backends; each must subclass Ask::WebFetch::Backend and
+      # implement #fetch(url).
       def self.backends
-        @backends ||= [Ask::WebFetch::Backends::Local, Ask::WebFetch::Backends::Jina]
+        @backends ||= begin
+          chain = [Ask::WebFetch::Backends::Local, Ask::WebFetch::Backends::Jina]
+          if Ask::WebFetch::Backends::Crawl4Ai.configured?
+            chain.unshift(Ask::WebFetch::Backends::Crawl4Ai)
+          end
+          chain
+        end
       end
 
       class << self

@@ -12,32 +12,58 @@ required.
 `Ask::Tools::WebFetch` runs a chain of pluggable backends and returns the
 first success:
 
-1. **Local** (default) — pure Ruby `Net::HTTP` + Nokogiri + reverse_markdown:
+1. **Crawl4AI** (when configured) — self-hosted headless-Chromium renderer
+   (`POST /crawl` on `CRAWL4AI_URL`, default `http://localhost:11235`).
+   Renders JavaScript and returns clean fit-markdown, so it handles the
+   SPA pages the Local backend can't. Set `CRAWL4AI_URL` and it leads the
+   chain; when the service is down or unreachable it fails fast and falls
+   through.
+2. **Local** (default) — pure Ruby `Net::HTTP` + Nokogiri + reverse_markdown:
    browser-like User-Agent, redirects followed, main content extracted
    (`<article>` → `<main>` → `<body>`), navigation/scripts stripped, tables
    become markdown tables, links become `[text](url)`.
-2. **Jina** — Jina Reader free tier (`https://r.jina.ai/<url>`). It runs
+3. **Jina** — Jina Reader free tier (`https://r.jina.ai/<url>`). It runs
    headless Chromium, so it renders JS pages the Local backend can't. Free
    without a key (~20 req/min per IP); set `JINA_API_KEY` for higher limits.
 
-The tool falls back automatically: if Local fails (blocked, timeout,
-non-HTML, anti-bot challenge, or a JS page with no server-side content), it
-tries Jina. If Jina fails too (rate limit, access error, challenge page),
-the call returns a failure result listing each backend's error.
+The tool falls back automatically: if Crawl4AI is absent or fails, Local is
+tried (blocked, timeout, non-HTML, anti-bot challenge, or a JS page with no
+server-side content), then Jina. If every backend fails (rate limit, access
+error, challenge page), the call returns a failure result listing each
+backend's error.
+
+### Self-hosted Crawl4AI
+
+[Crawl4AI](https://docs.crawl4ai.com) runs as its own Docker service — the
+same self-hosted pattern as ask-web-search's SearXNG:
+
+```sh
+docker run -d --name crawl4ai -p 11235:11235 unclecode/crawl4ai:latest
+```
+
+```ruby
+# lib/ask/web_fetch/backends/crawl4ai.rb is used automatically when:
+ENV["CRAWL4AI_URL"]  = "http://localhost:11235"  # default when unset
+ENV["CRAWL4AI_TOKEN"] = "..."                    # JWT-protected servers (0.9+)
+```
+
+When `CRAWL4AI_URL` is set the default chain is
+`Crawl4Ai, Local, Jina`; otherwise it stays `Local, Jina`, so consumers
+without a Crawl4AI service see no behavior change.
 
 ### Adding a backend
 
 Backends subclass `Ask::WebFetch::Backend` and implement one method:
 
 ```ruby
-class Crawl4ai < Ask::WebFetch::Backend
+class MyBackend < Ask::WebFetch::Backend
   def fetch(url)
     # return { title: "Page Title", content: "markdown..." }
     # or raise Ask::WebFetch::FetchError / EmptyContentError
   end
 end
 
-Ask::Tools::WebFetch.backends = [Crawl4ai, Ask::WebFetch::Backends::Local]
+Ask::Tools::WebFetch.backends = [MyBackend, Ask::WebFetch::Backends::Local]
 ```
 
 `#fetch` must return `{ title: String|nil, content: String }` and raise
@@ -87,13 +113,17 @@ backend's error.
 
 No configuration required for the default chain. Optional knobs:
 
+- `CRAWL4AI_URL` — enables the self-hosted Crawl4AI backend and leads the
+  chain (default `http://localhost:11235` when set via the class accessor)
+- `CRAWL4AI_TOKEN` — Bearer token for JWT-protected Crawl4AI servers (0.9+)
 - `JINA_API_KEY` — enables the Jina fallback with higher rate limits
 - `max_chars` parameter — caps output length (default 20000)
 
 ## Known limitations
 
 - Pages rendered entirely client-side (JavaScript SPAs) may yield little or
-  no content — no JS engine is executed.
+  no content unless Crawl4AI is configured — set `CRAWL4AI_URL` to handle
+  them with a self-hosted renderer.
 - Some sites block non-browser requests regardless of User-Agent.
 
 ## Full documentation

@@ -1,3 +1,18 @@
+## [0.3.0] — 2026-08-07
+
+### Added
+
+- `Ask::WebFetch::Backends::Crawl4Ai`: self-hosted Crawl4AI backend
+  (headless-Chromium renderer that handles JavaScript pages and returns
+  clean markdown). Talks to the Crawl4AI server's `POST /crawl` endpoint,
+  configured via `CRAWL4AI_URL` (default `http://localhost:11235`) with
+  optional `CRAWL4AI_TOKEN` for JWT-protected servers.
+- Config-aware chain: the default backend chain is now
+  `Crawl4Ai, Local, Jina` when `CRAWL4AI_URL` is set — Crawl4AI leads when
+  present, falls through to Local when it's down or unreachable, Jina stays
+  the last resort. Consumers without Crawl4AI configured see the previous
+  `Local, Jina` behavior unchanged.
+
 ## [0.2.0] — 2026-08-04
 
 ### Added
