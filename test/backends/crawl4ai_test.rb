@@ -168,6 +168,25 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
     _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
   end
 
+  it 'exposes the redirect chain the crawl followed' do
+    result = JSON.parse(crawl_body)['results'].first
+    result['redirected_status_code'] = 301
+    result['redirected_url'] = 'https://example.com/canonical'
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: {success: true, results: [result]}.to_json)
+
+    page = @backend.fetch('https://example.com/old')
+
+    _(page[:redirected]).must_equal(status: 301, url: 'https://example.com/canonical')
+  end
+
+  it 'returns no redirect info when the page answered directly' do
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: crawl_body)
+
+    page = @backend.fetch('https://example.com')
+
+    assert_nil page[:redirected]
+  end
+
   it 'raises FetchError on challenge pages' do
     stub_request(:post, /crawl4ai\.test/)
       .to_return(status: 200, body: crawl_body(markdown: '<title>Just a moment...</title>'))

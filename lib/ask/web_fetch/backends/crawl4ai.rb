@@ -119,10 +119,25 @@ module Ask
             title: result.dig('metadata', 'title'),
             description: result.dig('metadata', 'description') ||
               result.dig('metadata', 'og_description'),
-            content: markdown
+            content: markdown,
+            # The page's own redirect, if the crawl followed one — lets
+            # consumers record permanent redirects on their ledger instead
+            # of silently indexing under the original URL.
+            redirected: redirect_of(result)
           }
         rescue JSON::ParserError => e
           raise FetchError, "Crawl4AI bad JSON response: #{e.message}"
+        end
+
+        # A redirect the browser followed: redirected_status_code is the
+        # status that started the chain (301/302/308...), redirected_url
+        # the final destination.
+        def redirect_of(result)
+          status = result['redirected_status_code'].to_i
+          url = result['redirected_url'].to_s
+          return nil if status.zero? || url.empty?
+
+          {status: status, url: url}
         end
       end
     end

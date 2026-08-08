@@ -138,6 +138,26 @@ describe Ask::WebFetch::Backends::Local do
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
     end
 
+    it 'exposes the redirect chain it followed' do
+      stub_request(:get, 'https://example.com/old')
+        .to_return(status: 301, headers: {'Location' => 'https://example.com/new'}, body: '')
+      stub_request(:get, 'https://example.com/new')
+        .to_return(status: 200, headers: {'Content-Type' => 'text/html'}, body: '<html><body><main>Moved, with enough content here to clear the minimum usable threshold. This sentence is repeated to make the page comfortably longer than the threshold.</main></body></html>')
+
+      page = @backend.fetch('https://example.com/old')
+
+      _(page[:redirected]).must_equal(status: 301, url: 'https://example.com/new')
+    end
+
+    it 'returns no redirect info when the URL answered directly' do
+      stub_request(:get, 'https://example.com')
+        .to_return(status: 200, headers: {'Content-Type' => 'text/html'}, body: '<html><body><main>Content here, with enough words to clear the minimum usable threshold comfortably. This sentence makes the page safely longer than the threshold.</main></body></html>')
+
+      page = @backend.fetch('https://example.com')
+
+      assert_nil page[:redirected]
+    end
+
     it 'raises ServerError for HTTP 5xx errors' do
       stub_request(:get, 'https://example.com').to_return(status: 500, body: 'boom')
 
