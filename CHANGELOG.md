@@ -1,3 +1,13 @@
+## [0.4.1] — 2026-08-08
+
+### Fixed
+
+- `ContentFilter` now excludes `<svg>` elements outright. Chart SVG text was
+  leaking into the markdown as concatenated axis labels ("01M2M3M",
+  "10Apr15Apr", "025K50K") on chart-heavy pages like the patronview bot
+  article. crawl4ai's excluded-tags list omits `svg`; the pipeline's
+  region-based scrub already dropped it, and the filter now matches.
+
 ## [0.4.0] — 2026-08-08
 
 ### Added

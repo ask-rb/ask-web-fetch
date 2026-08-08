@@ -302,6 +302,19 @@ describe Ask::WebFetch::ContentFilter do
 
       _(combined(Ask::WebFetch::ContentFilter.new, html)).must_include 'def hello'
     end
+
+    it 'drops inline SVG chart text (deviation from crawl4ai)' do
+      html = "<html><body><article>" \
+             "<p>#{'Real words here. ' * 20}</p>" \
+             '<svg><text>01M2M3M</text><text>10Apr15Apr</text><text>025K50K</text></svg>' \
+             '</article></body></html>'
+      text = combined(Ask::WebFetch::ContentFilter.new, html)
+
+      _(text).must_include 'real words here'
+      _(text).wont_include '01m2m3m'
+      _(text).wont_include '10apr15apr'
+      _(text).wont_include '025k50k'
+    end
   end
 
   describe 'fit_html' do

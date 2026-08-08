@@ -20,10 +20,12 @@ module Ask
     # table/pre/code family gets content-worthy weights. Third: the class/id
     # chrome penalty actually subtracts from the score — crawl4ai floors it at
     # zero (max(0, ...)), which makes its negative-patterns metric inert.
+    # Fourth: <svg> is excluded outright — chart text would otherwise leak
+    # into the markdown as concatenated axis labels ("01M2M3M", "10Apr15Apr").
     class ContentFilter
       # Structural boilerplate, removed before scoring ever runs. The
       # preserve_* whitelist cannot save these.
-      EXCLUDED_TAGS = %w[nav footer header aside script style form iframe noscript].freeze
+      EXCLUDED_TAGS = %w[nav footer header aside script style form iframe noscript svg].freeze
 
       # Class/id fragments that mark non-content chrome; matching one knocks
       # 0.5 off the node's score.
