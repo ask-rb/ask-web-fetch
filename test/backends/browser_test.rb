@@ -106,6 +106,15 @@ describe Ask::WebFetch::Backends::Browser do
       _(Ask::WebFetch::Backends::Browser.configured?).must_equal false
     end
 
+    it 'is configured when only a CDP endpoint is set' do
+      Ask::WebFetch::Backends::Browser.path = ''
+      Ask::WebFetch::Backends::Browser.cdp_url = 'http://127.0.0.1:9222'
+
+      _(Ask::WebFetch::Backends::Browser.configured?).must_equal true
+    ensure
+      Ask::WebFetch::Backends::Browser.cdp_url = nil
+    end
+
     it 'honors ASK_WEB_FETCH_CHROME_PATH' do
       Ask::WebFetch::Backends::Browser.path = nil
       old = ENV['ASK_WEB_FETCH_CHROME_PATH']
@@ -114,6 +123,52 @@ describe Ask::WebFetch::Backends::Browser do
       _(Ask::WebFetch::Backends::Browser.path).must_equal '/custom/chrome'
     ensure
       ENV['ASK_WEB_FETCH_CHROME_PATH'] = old
+    end
+  end
+
+  describe 'ws_url_for' do
+    before do
+      WebMock.disable_net_connect!
+    end
+
+    after do
+      WebMock.reset!
+    end
+
+    it 'passes a ws:// endpoint through unchanged' do
+      _(Ask::WebFetch::Backends::Browser.ws_url_for('ws://127.0.0.1:9222/devtools/browser/x'))
+        .must_equal 'ws://127.0.0.1:9222/devtools/browser/x'
+    end
+
+    it 'discovers the browser WebSocket URL from an HTTP endpoint' do
+      stub_request(:get, 'http://127.0.0.1:9222/json/version')
+        .to_return(status: 200, body: '{"webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/abc"}')
+
+      _(Ask::WebFetch::Backends::Browser.ws_url_for('http://127.0.0.1:9222'))
+        .must_equal 'ws://127.0.0.1:9222/devtools/browser/abc'
+    end
+
+    it 'accepts a full /json/version URL' do
+      stub_request(:get, 'http://127.0.0.1:9222/json/version')
+        .to_return(status: 200, body: '{"webSocketDebuggerUrl": "ws://x"}')
+
+      _(Ask::WebFetch::Backends::Browser.ws_url_for('http://127.0.0.1:9222/json/version')).must_equal 'ws://x'
+    end
+
+    it 'raises FetchError when the endpoint is unreachable' do
+      stub_request(:get, 'http://127.0.0.1:9222/json/version').to_raise(Errno::ECONNREFUSED.new)
+
+      err = _(-> { Ask::WebFetch::Backends::Browser.ws_url_for('http://127.0.0.1:9222') })
+            .must_raise Ask::WebFetch::FetchError
+      _(err.message).must_include 'cannot reach CDP endpoint'
+    end
+
+    it 'raises FetchError on a malformed version response' do
+      stub_request(:get, 'http://127.0.0.1:9222/json/version').to_return(status: 200, body: 'not json')
+
+      err = _(-> { Ask::WebFetch::Backends::Browser.ws_url_for('http://127.0.0.1:9222') })
+            .must_raise Ask::WebFetch::FetchError
+      _(err.message).must_include 'bad CDP version response'
     end
   end
 

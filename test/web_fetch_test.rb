@@ -120,6 +120,7 @@ describe Ask::Tools::WebFetch do
   describe 'backend chain' do
     before do
       WebMock.disable_net_connect!
+      Ask::Tools::WebFetch.backends = nil
       Ask::WebFetch::Backends::Browser.path = ''
     end
 
@@ -131,6 +132,7 @@ describe Ask::Tools::WebFetch do
     end
 
     it 'prefers crawl4ai when it is configured and succeeds' do
+      Ask::Tools::WebFetch.backends = nil
       Ask::WebFetch::Backends::Crawl4Ai.url = 'http://crawl4ai.test'
       crawl_body = {
         success: true,
