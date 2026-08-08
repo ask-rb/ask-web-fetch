@@ -14,21 +14,25 @@ module Ask
     #
     # Chain: Crawl4AI first (self-hosted headless-Chromium renderer; used
     # when the CRAWL4AI_URL service is present, fails fast when it isn't),
-    # then the local fetcher, with Jina Reader as the last resort.
+    # then the local fetcher, Jina Reader as the last resort, and a real
+    # Chrome (via Ferrum) at the very end for pages whose Cloudflare-style
+    # challenges the others cannot pass — appended only when a browser
+    # binary is present.
     class WebFetch < Ask::Tool
       DEFAULT_MAX_CHARS = 20_000
 
       # Backend chain, tried in order. Crawl4AI leads when configured
       # (CRAWL4AI_URL), so a present self-hosted renderer is preferred;
-      # otherwise Local, with Jina as the last resort. Swap or extend for
-      # future backends; each must subclass Ask::WebFetch::Backend and
-      # implement #fetch(url).
+      # otherwise Local, with Jina as the last resort, and Browser appended
+      # when Chrome is available. Swap or extend for future backends; each
+      # must subclass Ask::WebFetch::Backend and implement #fetch(url).
       def self.backends
         @backends ||= begin
           chain = [Ask::WebFetch::Backends::Local, Ask::WebFetch::Backends::Jina]
           if Ask::WebFetch::Backends::Crawl4Ai.configured?
             chain.unshift(Ask::WebFetch::Backends::Crawl4Ai)
           end
+          chain << Ask::WebFetch::Backends::Browser if Ask::WebFetch::Backends::Browser.configured?
           chain
         end
       end

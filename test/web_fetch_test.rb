@@ -38,20 +38,25 @@ describe Ask::Tools::WebFetch do
     _(tool).must_be_kind_of Ask::Tools::WebFetch
   end
 
-  it 'defaults to Local then Jina when Crawl4AI is not configured' do
+  it 'defaults to Local then Jina when Crawl4AI and Browser are not configured' do
     Ask::Tools::WebFetch.backends = nil
     Ask::WebFetch::Backends::Crawl4Ai.url = nil
+    Ask::WebFetch::Backends::Browser.path = ''
 
     _(Ask::WebFetch::Backends::Crawl4Ai.configured?).must_equal false
+    _(Ask::WebFetch::Backends::Browser.configured?).must_equal false
     _(@tool.class.backends).must_equal [
       Ask::WebFetch::Backends::Local,
       Ask::WebFetch::Backends::Jina
     ]
+  ensure
+    Ask::WebFetch::Backends::Browser.path = nil
   end
 
   it 'leads with Crawl4AI when it is configured' do
     Ask::Tools::WebFetch.backends = nil
     Ask::WebFetch::Backends::Crawl4Ai.url = 'http://crawl4ai.test'
+    Ask::WebFetch::Backends::Browser.path = ''
 
     _(@tool.class.backends).must_equal [
       Ask::WebFetch::Backends::Crawl4Ai,
@@ -59,6 +64,23 @@ describe Ask::Tools::WebFetch do
       Ask::WebFetch::Backends::Jina
     ]
   ensure
+    Ask::WebFetch::Backends::Crawl4Ai.url = nil
+    Ask::WebFetch::Backends::Browser.path = nil
+    Ask::Tools::WebFetch.backends = nil
+  end
+
+  it 'appends Browser last when Chrome is available' do
+    Ask::Tools::WebFetch.backends = nil
+    Ask::WebFetch::Backends::Crawl4Ai.url = nil
+    Ask::WebFetch::Backends::Browser.path = '/fake/chrome'
+
+    _(@tool.class.backends).must_equal [
+      Ask::WebFetch::Backends::Local,
+      Ask::WebFetch::Backends::Jina,
+      Ask::WebFetch::Backends::Browser
+    ]
+  ensure
+    Ask::WebFetch::Backends::Browser.path = nil
     Ask::WebFetch::Backends::Crawl4Ai.url = nil
     Ask::Tools::WebFetch.backends = nil
   end
@@ -98,11 +120,13 @@ describe Ask::Tools::WebFetch do
   describe 'backend chain' do
     before do
       WebMock.disable_net_connect!
+      Ask::WebFetch::Backends::Browser.path = ''
     end
 
     after do
       Ask::Tools::WebFetch.backends = nil
       Ask::WebFetch::Backends::Crawl4Ai.url = nil
+      Ask::WebFetch::Backends::Browser.path = nil
       WebMock.reset!
     end
 
@@ -248,10 +272,12 @@ describe Ask::Tools::WebFetch do
   describe 'connection and HTTP errors (all backends fail)' do
     before do
       WebMock.disable_net_connect!
+      Ask::WebFetch::Backends::Browser.path = ''
       stub_request(:get, /r\.jina\.ai/).to_return(status: 500, body: 'jina down')
     end
 
     after do
+      Ask::WebFetch::Backends::Browser.path = nil
       WebMock.reset!
     end
 

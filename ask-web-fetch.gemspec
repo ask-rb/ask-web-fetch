@@ -12,9 +12,11 @@ Gem::Specification.new do |spec|
   spec.description = 'Provides Ask::Tools::WebFetch, a tool that fetches a URL ' \
                      'and converts its content to clean markdown for LLM ' \
                      'consumption. Defaults to a pure Ruby backend (Net::HTTP + ' \
-                     'Nokogiri + reverse_markdown) with an automatic Jina Reader ' \
-                     'fallback for JS-rendered or blocked pages. Works with any ' \
-                     'ask-rb chat or agent.'
+                     'Nokogiri + reverse_markdown) with a Jina Reader fallback ' \
+                     'for JS-rendered or blocked pages, and a real-Chrome ' \
+                     'fallback (Ferrum) that renders JavaScript and lets ' \
+                     'auto-solving Cloudflare challenges complete. Works with ' \
+                     'any ask-rb chat or agent.'
   spec.homepage = 'https://github.com/ask-rb/ask-web-fetch'
   spec.license = 'MIT'
 
@@ -29,6 +31,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ['lib']
 
   spec.add_dependency 'ask-tools', '>= 0.1'
+  spec.add_dependency 'ferrum', '>= 0.14'
   spec.add_dependency 'nokogiri', '>= 1.15'
   spec.add_dependency 'reverse_markdown', '>= 2.0'
 

@@ -52,6 +52,14 @@ module Ask
 
       DEFAULT_THRESHOLD = 0.48
 
+      # The filter the backends use by default: the adaptive threshold, which
+      # loosens the bar for content-carrying tags and text-heavy nodes and
+      # tightens it for link-heavy ones — catching the classic
+      # sidebar-of-links that the fixed bar lets through.
+      def self.default
+        new(threshold_type: :dynamic)
+      end
+
       # threshold::   score below this removes the element
       # threshold_type:: :fixed or :dynamic — dynamic loosens the bar for
       #                important tags and text-heavy, link-light nodes

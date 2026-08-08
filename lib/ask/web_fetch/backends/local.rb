@@ -26,12 +26,8 @@ module Ask
           # convert the article/main region without pruning.
           attr_writer :content_filter
 
-          # Dynamic threshold (crawl4ai's default is fixed 0.48): loosens the
-          # bar for content-carrying tags and text-heavy nodes, and tightens
-          # it for link-heavy ones — which is what catches the classic
-          # sidebar-of-links that the fixed bar lets through.
           def content_filter
-            @content_filter ||= ContentFilter.new(threshold_type: :dynamic)
+            @content_filter ||= ContentFilter.default
           end
         end
 
