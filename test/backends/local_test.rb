@@ -7,6 +7,10 @@ describe Ask::WebFetch::Backends::Local do
     @backend = Ask::WebFetch::Backends::Local.new
   end
 
+  after do
+    Ask::WebFetch::Backends::Local.content_filter = nil
+  end
+
   describe 'conversion' do
     it 'converts links to markdown' do
       html = '<html><head><title>Title</title></head><body><main>' \
@@ -18,10 +22,11 @@ describe Ask::WebFetch::Backends::Local do
     end
 
     it 'converts tables to markdown tables' do
-      html = '<html><body><table><tr><td><a href="https://a.com">A</a></td></tr></table></body></html>'
+      html = '<html><body><table><tr><td>Alpha</td><td>Beta</td></tr>' \
+             '<tr><td>Gamma</td><td>Delta</td></tr></table></body></html>'
       page = @backend.send(:to_markdown, html, 'https://example.com')
 
-      _(page[:content]).must_match(%r{\|.*\[A\]\(https://a\.com\)})
+      _(page[:content]).must_match(%r{\|.*Alpha.*Beta.*\|})
     end
 
     it 'returns an empty title when the page has no title' do
@@ -37,50 +42,35 @@ describe Ask::WebFetch::Backends::Local do
 
       _(page[:content]).must_equal ''
     end
-  end
 
-  describe 'extraction' do
-    it 'prefers article over main and body' do
-      doc = Nokogiri::HTML(<<~HTML)
+    it 'prunes nav, footer, and link-farm sidebar chrome by default' do
+      html = <<~HTML
         <html><body>
-          <main><p>main content</p></main>
-          <article><p>article content</p></article>
+          <nav><a href="/">Home</a></nav>
+          <article><p>Real article content that should survive the default
+          pruning filter without any trouble at all.</p></article>
+          <div class="sidebar">
+            <a href="/p1">Popular post one</a>
+            <a href="/p2">Popular post two</a>
+            <a href="/p3">Popular post three</a>
+          </div>
+          <footer>Copyright</footer>
         </body></html>
       HTML
-      candidate = @backend.send(:extract_main, doc)
+      page = @backend.send(:to_markdown, html, 'https://example.com')
 
-      _(candidate.name).must_equal 'article'
+      _(page[:content]).must_include 'Real article content'
+      _(page[:content]).wont_include 'Popular post'
+      _(page[:content]).wont_include 'Copyright'
+      _(page[:content]).wont_include '[Home](https://example.com/)'
     end
 
-    it 'falls back to main, then body' do
-      doc = Nokogiri::HTML('<html><body><main><p>hi</p></main></body></html>')
+    it 'converts the whole region when pruning is disabled' do
+      Ask::WebFetch::Backends::Local.content_filter = nil
+      html = '<html><body><article><p>Content.</p></article></body></html>'
+      page = @backend.send(:to_markdown, html, 'https://example.com')
 
-      _(@backend.send(:extract_main, doc).name).must_equal 'main'
-
-      doc2 = Nokogiri::HTML('<html><body><div><p>hi</p></div></body></html>')
-
-      _(@backend.send(:extract_main, doc2).name).must_equal 'body'
-    end
-
-    it 'scrubs scripts, nav, and nav-chrome elements' do
-      doc = Nokogiri::HTML(<<~HTML)
-        <html><body>
-          <main>
-            <script>alert(1)</script>
-            <nav><a href="/x">menu</a></nav>
-            <div class="sidebar"><a href="/s">side</a></div>
-            <p>Keep me.</p>
-          </main>
-        </body></html>
-      HTML
-      candidate = @backend.send(:extract_main, doc)
-      @backend.send(:scrub, candidate)
-      html = candidate.to_html
-
-      _(html).wont_include 'alert'
-      _(html).wont_include 'sidebar'
-      _(html).wont_include '<nav>'
-      _(html).must_include 'Keep me.'
+      _(page[:content]).must_include 'Content.'
     end
   end
 

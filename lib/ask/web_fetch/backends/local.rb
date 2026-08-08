@@ -2,9 +2,9 @@
 
 require 'net/http'
 require 'uri'
-require 'nokogiri'
-require 'reverse_markdown'
 require_relative '../backend'
+require_relative '../content_filter'
+require_relative '../markdown'
 
 module Ask
   module WebFetch
@@ -12,17 +12,28 @@ module Ask
       # Default backend: pure Ruby Net::HTTP + Nokogiri + reverse_markdown.
       # No external service or API key; mirrors ask-web-search's self-hosted
       # SearXNG approach.
+      #
+      # HTML is converted through Ask::WebFetch::Markdown with a default
+      # ContentFilter, so the "fit" content — pruned by text density rather
+      # than by keyword — is what comes back.
       class Local < Backend
         MAX_REDIRECTS = 5
         OPEN_TIMEOUT = 5
         READ_TIMEOUT = 15
 
-        # Class/id fragments that mark navigation chrome worth dropping, e.g.
-        # "vector-page-toolbar", "sidebar", "toc".
-        NAV_CHROME_RE = /
-          (^|[\s_-])(nav|menu|toolbar|breadcrumb|sidebar|toc|footer|header|
-          banner|pagination|search|cookie|modal|popup)([\s_-]|$)
-        /ix
+        class << self
+          # The ContentFilter applied to every page by default. Set to nil to
+          # convert the article/main region without pruning.
+          attr_writer :content_filter
+
+          # Dynamic threshold (crawl4ai's default is fixed 0.48): loosens the
+          # bar for content-carrying tags and text-heavy nodes, and tightens
+          # it for link-heavy ones — which is what catches the classic
+          # sidebar-of-links that the fixed bar lets through.
+          def content_filter
+            @content_filter ||= ContentFilter.new(threshold_type: :dynamic)
+          end
+        end
 
         def fetch(url)
           body, content_type, redirect = fetch_html(url)
@@ -43,20 +54,8 @@ module Ask
         # content is clean markdown and description is the page's own meta
         # description (meta name=description, then og:description) — what the
         # site says about itself, free and authoritative.
-        def to_markdown(html, _url)
-          doc = Nokogiri::HTML(html)
-          candidate = extract_main(doc)
-          scrub(candidate)
-          markdown = ReverseMarkdown.convert(candidate.to_html, unknown_tags: :bypass, github_flavored: true)
-          markdown = clean(markdown)
-          title = doc.at('title')&.text&.strip
-          { title: title, description: meta_description(doc), content: markdown }
-        end
-
-        def meta_description(doc)
-          desc = doc.at('meta[name="description"]')&.[]('content')&.strip
-          desc = doc.at('meta[property="og:description"]')&.[]('content')&.strip if desc.to_s.empty?
-          desc
+        def to_markdown(html, url)
+          Markdown.generate(html, base_url: url, filter: self.class.content_filter)
         end
 
         private
@@ -94,28 +93,6 @@ module Ask
 
         def redirect_info(status, uri)
           status && {status: status, url: uri.to_s}
-        end
-
-        def extract_main(doc)
-          doc.at('article') || doc.at('main') || doc.at('[role="main"]') || doc.at('body') || doc
-        end
-
-        # Remove chrome INSIDE the candidate only, never ancestors.
-        def scrub(candidate)
-          candidate.css('script, style, noscript, nav, footer, header, iframe, form, svg, aside').each(&:remove)
-          candidate.css('*[id], *[class]').each do |el|
-            next if el.equal?(candidate)
-
-            id_cls = [el['id'], el['class']].compact.join(' ')
-            el.remove if id_cls.match?(NAV_CHROME_RE)
-          end
-          candidate
-        end
-
-        def clean(markdown)
-          markdown.gsub(/[ \t]+\n/, "\n")
-                  .gsub(/\n{3,}/, "\n\n")
-                  .strip
         end
       end
     end
