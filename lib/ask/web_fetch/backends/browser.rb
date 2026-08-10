@@ -164,6 +164,7 @@ module Ask
           raise FetchError, "challenge page at #{url}" if challenge_page?(body)
 
           result = Markdown.generate(body, base_url: url, filter: self.class.content_filter)
+          result[:outlinks] = outlink_urls(body, url)
           raise EmptyContentError, "no readable content at #{url}" unless usable_content?(result[:content])
 
           result

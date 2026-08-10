@@ -5,16 +5,27 @@ require 'ask-web-fetch'
 
 require 'minitest/autorun'
 
-require 'vcr'
 require 'webmock/minitest'
 
-VCR.configure do |c|
-  c.cassette_library_dir = File.expand_path('fixtures/vcr_cassettes', __dir__)
-  c.hook_into :webmock
-  c.ignore_localhost = false
-  c.default_cassette_options = {
-    record: :once,
-    allow_playback_repeats: true,
-    match_requests_on: %i[method uri]
-  }
+# One-hop transport stub for the Local backend's injectable HTTP seam.
+# The handler receives (url, headers) and returns an
+# Ask::WebFetch::Http::Response, or raises whatever the backend should
+# wrap (Errno, Ask::WebFetch::TimeoutError, ...). Production wires the
+# same seam to the pooled httpx Ask::WebFetch::Http.
+class StubHttp
+  attr_accessor :handler
+
+  def initialize(&handler)
+    @handler = handler
+  end
+
+  def get(url, headers: {})
+    handler.call(url, headers)
+  end
+end
+
+# Builds a hop's answer for StubHttp handlers.
+def http_response(status, body, content_type: 'text/html', location: nil)
+  Ask::WebFetch::Http::Response.new(status: status, body: body,
+                                    content_type: content_type, location: location)
 end

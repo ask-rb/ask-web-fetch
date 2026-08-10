@@ -42,8 +42,11 @@ module Ask
                    "ask-web-fetch/#{Ask::WebFetch::VERSION}".freeze
 
       # Content shorter than this is treated as a page with no usable
-      # content (e.g. a JS-rendered shell with nothing server-side).
-      MIN_CONTENT_LENGTH = 100
+      # content (e.g. a JS-rendered shell with nothing server-side). Low on
+      # purpose: the content hub keeps everything that is a real page, and
+      # the crawler's soft-404 detection (not length) is what separates
+      # pages from error shells.
+      MIN_CONTENT_LENGTH = 40
 
       # Cloudflare-style anti-bot signatures. Deliberately narrow:
       # challenge/interstitial pages carry these markers, while legitimate
@@ -55,10 +58,53 @@ module Ask
         name.split('::').last
       end
 
-      # Fetches +url+ and returns { title: String|nil, content: String }.
+      # Fetches +url+ and returns { title:, description:, content:,
+      # redirected:, licenses:, outlinks: } — licenses being the page's
+      # declared license signals (hrefs/values) and outlinks the page's
+      # raw link set ([] when the backend can't see any), both consumed by
+      # the crawler's classification/discovery layers.
       # Raises FetchError or EmptyContentError on failure.
       def fetch(url)
         raise NotImplementedError, "#{self.class} must implement #fetch(url)"
+      end
+
+      # --- outlinks (crawler discovery) ---
+
+      # The page's raw outlinks from HTML: every <a href> resolved against
+      # the base URL and scheme-filtered to absolute http(s). Nav and
+      # footer are included — a crawler's discovery reads the full link set
+      # even when the stored content is pruned by the ContentFilter. Shared
+      # by every backend that holds the page's HTML.
+      def outlink_urls(html, base_url)
+        Nokogiri::HTML(html).css('a[href]').filter_map do |anchor|
+          href = anchor['href'].to_s.strip
+          next if href.empty? || href.start_with?('javascript:', 'mailto:', 'tel:', '#', 'data:')
+
+          uri = URI.join(base_url, href)
+          next unless %w[http https].include?(uri.scheme)
+
+          uri.to_s
+        rescue URI::InvalidURIError
+          next
+        end.uniq
+      end
+
+      # Fallback for backends that only see rendered markdown (Jina,
+      # Crawl4AI's markdown output): the markdown's [text](url) links,
+      # resolved and scheme-filtered. Same shape as #outlink_urls, one
+      # implementation for every backend that lacks the raw HTML.
+      def markdown_outlinks(content, base_url)
+        content.to_s.scan(/\]\(([^)\s]+)\)/).filter_map do |match|
+          dest = match[0]
+          next if dest.start_with?('javascript:', 'mailto:', 'tel:', '#', 'data:')
+
+          uri = URI.join(base_url, dest)
+          next unless %w[http https].include?(uri.scheme)
+
+          uri.to_s
+        rescue URI::InvalidURIError
+          next
+        end.uniq
       end
 
       private

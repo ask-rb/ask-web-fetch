@@ -182,6 +182,13 @@ describe Ask::WebFetch::Backends::Browser do
       _(result[:content]).wont_include 'Copyright'
     end
 
+    it 'extracts outlinks from the raw rendered HTML — nav included' do
+      page = FakePage.new(html: article_html)
+      result = build_backend(page).fetch('https://example.com')
+
+      _(result[:outlinks]).must_include 'https://example.com/'
+    end
+
     it 'closes the page after the fetch' do
       page = FakePage.new(html: article_html)
       build_backend(page).fetch('https://example.com')

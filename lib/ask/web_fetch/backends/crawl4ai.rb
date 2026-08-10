@@ -120,6 +120,9 @@ module Ask
             description: result.dig('metadata', 'description') ||
               result.dig('metadata', 'og_description'),
             content: markdown,
+            # Raw markdown keeps the nav links the ContentFilter prunes —
+            # discovery reads these even when the stored content is lean.
+            outlinks: markdown_outlinks(markdown, url),
             # The page's own redirect, if the crawl followed one — lets
             # consumers record permanent redirects on their ledger instead
             # of silently indexing under the original URL.

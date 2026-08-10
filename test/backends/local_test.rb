@@ -43,6 +43,26 @@ describe Ask::WebFetch::Backends::Local do
       _(page[:content]).must_equal ''
     end
 
+    it 'extracts declared license signals from the page' do
+      html = <<~HTML
+        <html><head>
+          <link rel="license" href="https://creativecommons.org/licenses/by/4.0/">
+          <meta name="dc.rights" content="Copyright 2025 Acme">
+        </head><body><main><p>Some content.</p></main></body></html>
+      HTML
+      page = @backend.send(:to_markdown, html, 'https://example.com')
+
+      _(page[:licenses]).must_include 'https://creativecommons.org/licenses/by/4.0/'
+      _(page[:licenses]).must_include 'Copyright 2025 Acme'
+    end
+
+    it 'returns an empty license list when the page declares nothing' do
+      html = '<html><body><p>Just some text.</p></body></html>'
+      page = @backend.send(:to_markdown, html, 'https://example.com')
+
+      _(page[:licenses]).must_equal []
+    end
+
     it 'prunes nav, footer, and link-farm sidebar chrome by default' do
       html = <<~HTML
         <html><body>
@@ -76,63 +96,72 @@ describe Ask::WebFetch::Backends::Local do
 
   describe 'fetch' do
     before do
-      WebMock.disable_net_connect!
+      @original_http = Ask::WebFetch::Backends::Local.http
+      # One-hop HTTP stub: the backend sees the same seam production wires
+      # to the pooled httpx transport (Ask::WebFetch::Http), but the test
+      # supplies each hop's answer. Redirects are still the backend's job,
+      # so the stub branches on URL like a real server would.
+      @http = StubHttp.new { raise 'no response stubbed' }
+      Ask::WebFetch::Backends::Local.http = @http
     end
 
     after do
-      WebMock.reset!
+      Ask::WebFetch::Backends::Local.http = @original_http
+    end
+
+    def stub_http(&handler)
+      @http.handler = handler
     end
 
     it 'raises EmptyContentError for a JS shell with no server-side content' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' },
-                   body: '<html><body><div id="app"><script>render()</script></div></body></html>')
+      stub_http { |_, _| http_response(200, '<html><body><div id="app"><script>render()</script></div></body></html>') }
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
     end
 
     it 'raises EmptyContentError for content below the minimum length' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' },
-                   body: '<html><body><p>tiny</p></body></html>')
+      stub_http { |_, _| http_response(200, '<html><body><p>tiny</p></body></html>') }
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
     end
 
     it 'raises FetchError for a Cloudflare challenge page' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' },
-                   body: '<html><head><title>Just a moment...</title></head>' \
-                         '<body><p>Checking your browser</p></body></html>')
+      stub_http do |_, _|
+        http_response(200, '<html><head><title>Just a moment...</title></head>' \
+                      '<body><p>Checking your browser</p></body></html>')
+      end
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
     end
 
     it 'does not mistake embedded captcha config for a challenge page' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' },
-                   body: '<html><head><title>Wiki</title>' \
-                         '<script>window.mwConfig = {"wgConfirmEditCaptchaNeededForGenericEdit":"hcaptcha"}</script>' \
-                         '</head><body><article>' \
-                         "<p>#{'Real article content above the minimum threshold. ' * 5}</p>" \
-                         '</article></body></html>')
+      stub_http do |_, _|
+        http_response(200, '<html><head><title>Wiki</title>' \
+                      '<script>window.mwConfig = {"wgConfirmEditCaptchaNeededForGenericEdit":"hcaptcha"}</script>' \
+                      '</head><body><article>' \
+                      "<p>#{'Real article content above the minimum threshold. ' * 5}</p>" \
+                      '</article></body></html>')
+      end
       page = @backend.fetch('https://example.com')
 
       _(page[:title]).must_equal 'Wiki'
     end
 
     it 'raises FetchError for non-HTML content' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'application/pdf' }, body: '%PDF-1.4')
+      stub_http { |_, _| http_response(200, '%PDF-1.4', content_type: 'application/pdf') }
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
     end
 
     it 'exposes the redirect chain it followed' do
-      stub_request(:get, 'https://example.com/old')
-        .to_return(status: 301, headers: {'Location' => 'https://example.com/new'}, body: '')
-      stub_request(:get, 'https://example.com/new')
-        .to_return(status: 200, headers: {'Content-Type' => 'text/html'}, body: '<html><body><main>Moved, with enough content here to clear the minimum usable threshold. This sentence is repeated to make the page comfortably longer than the threshold.</main></body></html>')
+      stub_http do |url, _|
+        case url
+        when 'https://example.com/old' then http_response(301, '', location: 'https://example.com/new')
+        when 'https://example.com/new'
+          http_response(200, 'Moved, with enough content here to clear the minimum usable threshold. ' \
+                        'This sentence is repeated to make the page comfortably longer than the threshold.')
+        end
+      end
 
       page = @backend.fetch('https://example.com/old')
 
@@ -140,8 +169,10 @@ describe Ask::WebFetch::Backends::Local do
     end
 
     it 'returns no redirect info when the URL answered directly' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: {'Content-Type' => 'text/html'}, body: '<html><body><main>Content here, with enough words to clear the minimum usable threshold comfortably. This sentence makes the page safely longer than the threshold.</main></body></html>')
+      stub_http do |_, _|
+        http_response(200, 'Content here, with enough words to clear the minimum usable threshold ' \
+                      'comfortably. This sentence makes the page safely longer than the threshold.')
+      end
 
       page = @backend.fetch('https://example.com')
 
@@ -149,56 +180,58 @@ describe Ask::WebFetch::Backends::Local do
     end
 
     it 'raises ServerError for HTTP 5xx errors' do
-      stub_request(:get, 'https://example.com').to_return(status: 500, body: 'boom')
+      stub_http { |_, _| http_response(500, 'boom') }
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
     end
 
     it 'raises FetchError for redirect loops' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 302, headers: { 'Location' => 'https://example.com' })
+      stub_http { |_, _| http_response(302, '', location: 'https://example.com') }
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
     end
 
     it 'follows redirects' do
-      stub_request(:get, 'https://example.com/start')
-        .to_return(status: 302, headers: { 'Location' => 'https://example.com/final' })
-      stub_request(:get, 'https://example.com/final')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' },
-                   body: '<html><head><title>Final</title></head><body>' \
-                         '<p>Hello world here. This page has enough content to pass the minimum ' \
-                         'threshold for usable text in the backend fetcher.</p></body></html>')
+      stub_http do |url, _|
+        case url
+        when 'https://example.com/start' then http_response(302, '', location: 'https://example.com/final')
+        when 'https://example.com/final'
+          http_response(200, '<html><head><title>Final</title></head><body>' \
+                        '<p>Hello world here. This page has enough content to pass the minimum ' \
+                        'threshold for usable text in the backend fetcher.</p></body></html>')
+        end
+      end
+
       page = @backend.fetch('https://example.com/start')
 
       _(page[:title]).must_equal 'Final'
     end
 
     it 'wraps network errors in TimeoutError' do
-      stub_request(:get, 'https://example.com').to_raise(Errno::ECONNREFUSED.new)
+      stub_http { raise Errno::ECONNREFUSED }
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::TimeoutError
     end
 
-    it 'wraps timeouts in TimeoutError' do
-      stub_request(:get, 'https://example.com').to_timeout
+    it 'wraps transport timeouts in TimeoutError' do
+      stub_http { raise Ask::WebFetch::TimeoutError, 'connect timed out' }
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::TimeoutError
     end
 
     it 'raises FetchError for a dead URL (404)' do
-      stub_request(:get, 'https://example.com/missing').to_return(status: 404, body: 'nope')
+      stub_http { |_, _| http_response(404, 'nope') }
 
       err = _(-> { @backend.fetch('https://example.com/missing') }).must_raise Ask::WebFetch::FetchError
       _(err.message).must_include 'got 404 from'
     end
 
     it 'raises ServerError for a 429 or 5xx' do
-      stub_request(:get, 'https://example.com').to_return(status: 503, body: 'busy')
+      stub_http { |_, _| http_response(503, 'busy') }
 
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
 
-      stub_request(:get, 'https://example.com').to_return(status: 429, body: 'slow down')
+      stub_http { |_, _| http_response(429, 'slow down') }
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ServerError
     end
   end

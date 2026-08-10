@@ -122,13 +122,23 @@ describe Ask::Tools::WebFetch do
       WebMock.disable_net_connect!
       Ask::Tools::WebFetch.backends = nil
       Ask::WebFetch::Backends::Browser.path = ''
+      # Local's HTTP is the seam (see StubHttp in test_helper); Jina and
+      # Crawl4AI still run over Net::HTTP, so they keep WebMock stubs.
+      @original_local_http = Ask::WebFetch::Backends::Local.http
+      @local_http = StubHttp.new { raise 'unexpected local request' }
+      Ask::WebFetch::Backends::Local.http = @local_http
     end
 
     after do
       Ask::Tools::WebFetch.backends = nil
       Ask::WebFetch::Backends::Crawl4Ai.url = nil
       Ask::WebFetch::Backends::Browser.path = nil
+      Ask::WebFetch::Backends::Local.http = @original_local_http
       WebMock.reset!
+    end
+
+    def stub_local(&handler)
+      @local_http.handler = handler
     end
 
     it 'prefers crawl4ai when it is configured and succeeds' do
@@ -160,8 +170,7 @@ describe Ask::Tools::WebFetch do
       stub_request(:post, 'http://crawl4ai.test/crawl').to_return(status: 503, body: 'down')
       body = '<html><head><title>Local Page</title></head><body><article>' \
              "<p>#{'Plenty of real content for the local backend. ' * 10}</p></article></body></html>"
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' }, body: body)
+      stub_local { |_, _| http_response(200, body) }
 
       result = @tool.call('url' => 'https://example.com')
 
@@ -172,8 +181,7 @@ describe Ask::Tools::WebFetch do
     it 'uses local when it succeeds and never calls jina' do
       body = '<html><head><title>Local Page</title></head><body><article>' \
              "<p>#{'Plenty of real content for the local backend. ' * 10}</p></article></body></html>"
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' }, body: body)
+      stub_local { |_, _| http_response(200, body) }
       result = @tool.call('url' => 'https://example.com')
 
       _(result.ok?).must_equal true
@@ -182,9 +190,7 @@ describe Ask::Tools::WebFetch do
     end
 
     it 'falls back to jina when local finds no content (JS page)' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'text/html' },
-                   body: '<html><body><div id="app"><script>render()</script></div></body></html>')
+      stub_local { |_, _| http_response(200, '<html><body><div id="app"><script>render()</script></div></body></html>') }
       stub_request(:get, 'https://r.jina.ai/https://example.com')
         .to_return(status: 200, body: 'Jina rendered this page with JavaScript content. ' * 5)
       result = @tool.call('url' => 'https://example.com')
@@ -194,7 +200,7 @@ describe Ask::Tools::WebFetch do
     end
 
     it 'falls back to jina when local gets an HTTP error' do
-      stub_request(:get, 'https://example.com').to_return(status: 403, body: 'forbidden')
+      stub_local { |_, _| http_response(403, 'forbidden') }
       stub_request(:get, 'https://r.jina.ai/https://example.com')
         .to_return(status: 200, body: 'Jina content here. ' * 10)
       result = @tool.call('url' => 'https://example.com')
@@ -204,8 +210,7 @@ describe Ask::Tools::WebFetch do
     end
 
     it 'falls back to jina for non-HTML content' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 200, headers: { 'Content-Type' => 'application/pdf' }, body: '%PDF-1.4')
+      stub_local { |_, _| http_response(200, '%PDF-1.4', content_type: 'application/pdf') }
       stub_request(:get, 'https://r.jina.ai/https://example.com')
         .to_return(status: 200, body: 'Jina parsed the PDF into markdown. ' * 10)
       result = @tool.call('url' => 'https://example.com')
@@ -215,7 +220,7 @@ describe Ask::Tools::WebFetch do
     end
 
     it 'fails when both backends fail and reports both errors' do
-      stub_request(:get, 'https://example.com').to_return(status: 500, body: 'boom')
+      stub_local { |_, _| http_response(500, 'boom') }
       stub_request(:get, 'https://r.jina.ai/https://example.com').to_return(status: 429, body: 'rate limited')
       result = @tool.call('url' => 'https://example.com')
 
@@ -239,52 +244,28 @@ describe Ask::Tools::WebFetch do
     end
   end
 
-  describe 'fetch with VCR' do
-    before do
-      VCR.insert_cassette('web_fetch_example_com')
-    end
-
-    after do
-      VCR.eject_cassette
-    end
-
-    it 'returns Ask::Result' do
-      result = @tool.call('url' => 'https://example.com')
-
-      _(result).must_be_kind_of Ask::Result
-      _(result.ok?).must_equal true
-    end
-
-    it 'returns markdown output with title and source' do
-      result = @tool.call('url' => 'https://example.com')
-
-      _(result.output).must_be_kind_of String
-      _(result.output).must_match(/\A# Example Domain/)
-      _(result.output).must_include 'Source: https://example.com'
-    end
-
-    it 'allows multiple calls via playback repeats' do
-      r1 = @tool.call('url' => 'https://example.com')
-      r2 = @tool.call('url' => 'https://example.com')
-
-      _(r1.output).must_equal r2.output
-    end
-  end
-
   describe 'connection and HTTP errors (all backends fail)' do
     before do
       WebMock.disable_net_connect!
       Ask::WebFetch::Backends::Browser.path = ''
       stub_request(:get, /r\.jina\.ai/).to_return(status: 500, body: 'jina down')
+      @original_local_http = Ask::WebFetch::Backends::Local.http
+      @local_http = StubHttp.new { raise 'unexpected local request' }
+      Ask::WebFetch::Backends::Local.http = @local_http
     end
 
     after do
       Ask::WebFetch::Backends::Browser.path = nil
+      Ask::WebFetch::Backends::Local.http = @original_local_http
       WebMock.reset!
     end
 
+    def stub_local(&handler)
+      @local_http.handler = handler
+    end
+
     it 'handles connection refused' do
-      stub_request(:get, /example\.com/).to_raise(Errno::ECONNREFUSED.new)
+      stub_local { raise Errno::ECONNREFUSED }
       result = @tool.call('url' => 'https://example.com')
 
       _(result).must_be_kind_of Ask::Result
@@ -292,7 +273,7 @@ describe Ask::Tools::WebFetch do
     end
 
     it 'handles timeout' do
-      stub_request(:get, /example\.com/).to_timeout
+      stub_local { raise Ask::WebFetch::TimeoutError, 'connect timed out' }
       result = @tool.call('url' => 'https://example.com')
 
       _(result).must_be_kind_of Ask::Result
@@ -300,22 +281,21 @@ describe Ask::Tools::WebFetch do
     end
 
     it 'handles HTTP error status' do
-      stub_request(:get, /example\.com/).to_return(status: 500, body: 'error')
+      stub_local { |_, _| http_response(500, 'error') }
       result = @tool.call('url' => 'https://example.com')
 
       _(result.ok?).must_equal false
     end
 
     it 'handles 404' do
-      stub_request(:get, /example\.com/).to_return(status: 404, body: 'nope')
+      stub_local { |_, _| http_response(404, 'nope') }
       result = @tool.call('url' => 'https://example.com')
 
       _(result.ok?).must_equal false
     end
 
     it 'handles redirect loops' do
-      stub_request(:get, 'https://example.com')
-        .to_return(status: 302, headers: { 'Location' => 'https://example.com' })
+      stub_local { |_, _| http_response(302, '', location: 'https://example.com') }
       result = @tool.call('url' => 'https://example.com')
 
       _(result.ok?).must_equal false

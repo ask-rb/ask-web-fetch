@@ -35,7 +35,9 @@ module Ask
             raise FetchError, 'challenge page from Jina' if challenge_page?(body)
             raise EmptyContentError, 'empty response from Jina' unless usable_content?(body)
 
-            { title: nil, description: nil, content: body.strip }
+            # Jina only sees rendered markdown — outlinks come from its
+            # links, resolved against the requested URL.
+            { title: nil, description: nil, content: body.strip, outlinks: markdown_outlinks(body, url) }
           when '429'
             raise ServerError, 'rate limited by Jina (429)'
           when '401', '403'

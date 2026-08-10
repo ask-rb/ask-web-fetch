@@ -37,6 +37,17 @@ describe Ask::WebFetch::Backends::Jina do
     assert_nil page[:title]
   end
 
+  it 'extracts outlinks from the returned markdown' do
+    body = "[Docs](/docs) and [External](https://other.com/x) and [Mail](mailto:x@example.com).\n" \
+           'Some more content that is long enough to pass the usable threshold here. ' * 2
+    stub_request(:get, /r\.jina\.ai/).to_return(status: 200, body: body)
+    page = @backend.fetch('https://example.com/guide')
+
+    _(page[:outlinks]).must_include 'https://example.com/docs'
+    _(page[:outlinks]).must_include 'https://other.com/x'
+    _(page[:outlinks]).wont_include 'mailto:x@example.com'
+  end
+
   it 'raises ServerError on rate limit (429)' do
     stub_request(:get, /r\.jina\.ai/).to_return(status: 429, body: 'rate limited')
 

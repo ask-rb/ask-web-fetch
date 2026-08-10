@@ -1,3 +1,40 @@
+## [0.5.0] — 2026-08-10
+
+### Added
+
+- `Ask::WebFetch::Http`: pooled keep-alive HTTP transport on httpx — one
+  persistent session per thread (no fresh TCP+TLS handshake per request),
+  HTTP/2 when the server negotiates it, retries with backoff on transient
+  failures (network errors and 429/5xx), explicit connect/read/operation
+  timeouts, and automatic gzip/deflate decoding. Every transport failure
+  (timeout, refused, reset, DNS, TLS) surfaces as `TimeoutError` — TLS
+  errors previously escaped as raw `OpenSSL` exceptions.
+- Raw outlinks in every backend's page result: `outlinks` — the page's
+  full `<a href>` set (nav and footer included), resolved and
+  scheme-filtered. Shared `outlink_urls` (HTML backends) and
+  `markdown_outlinks` (Jina, Crawl4AI) helpers on the base `Backend` keep
+  every backend in sync, so a crawler's discovery layer reads the whole
+  link set even when the stored content is pruned.
+- Declared license signals in the Local backend's page result: `licenses`
+  — `<link rel="license">`, license meta tags, and `[itemprop=license]`
+  markers, as an empty array when the page declares none.
+
+### Changed
+
+- The `Local` backend fetches through the pooled `Ask::WebFetch::Http`
+  transport instead of a fresh Net::HTTP connection per request.
+  Redirect semantics, the error vocabulary, and the page contract are
+  unchanged; an injectable seam (`Local.http =`) makes the transport
+  swappable in tests and by future engines.
+- New runtime dependency: `httpx`.
+
+### Removed
+
+- VCR cassette playback tests: VCR has no httpx hook, so they were
+  silently hitting the live network. The seam-stubbed backend tests plus
+  the new real-server `Http` tests (pooling, gzip decoding, retries,
+  error mapping) cover the same contract. VCR dev-dependency dropped.
+
 ## [0.4.1] — 2026-08-08
 
 ### Fixed

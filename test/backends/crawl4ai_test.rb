@@ -66,6 +66,16 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
     _(page[:content]).must_equal long_content
   end
 
+  it 'extracts outlinks from the raw markdown (nav survives the fit filter)' do
+    markdown = "[Home](/)\n[Guide](/guide)\n[External](https://other.com/x)\n#{long_content}"
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: crawl_body(markdown: markdown))
+    page = @backend.fetch('https://example.com')
+
+    _(page[:outlinks]).must_include 'https://example.com/'
+    _(page[:outlinks]).must_include 'https://example.com/guide'
+    _(page[:outlinks]).must_include 'https://other.com/x'
+  end
+
   it 'falls back to og_description when description is missing' do
     body = {
       success: true,
