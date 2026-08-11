@@ -48,6 +48,23 @@ describe Ask::WebFetch::Backends::Jina do
     _(page[:outlinks]).wont_include 'mailto:x@example.com'
   end
 
+  it 'strips decorative symbol noise from the returned markdown' do
+    noise = '+ = · ( ~ @ · # % · & \* ? · / : ; · \< \> · [] · { · } | · ^ $ · ! · ' * 6
+    body = "Some real content that is long enough to pass the threshold.\n\n#{noise}\n"
+    stub_request(:get, /r\.jina\.ai/).to_return(status: 200, body: body)
+    page = @backend.fetch('https://example.com')
+
+    _(page[:content]).wont_include '+ = ·'
+    _(page[:content]).must_include 'Some real content'
+  end
+
+  it 'raises EmptyContentError when the page was nothing but noise' do
+    noise = '+ = · ( ~ @ · # % · & \* ? · / : ; · \< \> · [] · { · } | · ^ $ · ! · ' * 6
+    stub_request(:get, /r\.jina\.ai/).to_return(status: 200, body: "#{noise}\n")
+
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
+  end
+
   it 'raises ServerError on rate limit (429)' do
     stub_request(:get, /r\.jina\.ai/).to_return(status: 429, body: 'rate limited')
 

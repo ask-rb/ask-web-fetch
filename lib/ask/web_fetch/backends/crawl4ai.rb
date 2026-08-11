@@ -4,6 +4,7 @@ require 'net/http'
 require 'uri'
 require 'json'
 require_relative '../backend'
+require_relative '../markdown'
 
 module Ask
   module WebFetch
@@ -115,6 +116,10 @@ module Ask
 
           markdown = result.dig('markdown', 'fit_markdown').to_s
           markdown = result.dig('markdown', 'raw_markdown').to_s if markdown.strip.empty?
+          # The service's markdown bypasses Markdown.generate, so it runs
+          # through the same shared clean (noise removal + whitespace) as
+          # the converting backends.
+          markdown = Markdown.clean(markdown)
           {
             title: result.dig('metadata', 'title'),
             description: result.dig('metadata', 'description') ||

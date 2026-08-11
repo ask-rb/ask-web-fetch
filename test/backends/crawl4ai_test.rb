@@ -63,7 +63,7 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
 
     _(page[:title]).must_equal 'Example Page'
     _(page[:description]).must_equal 'The page described by its own metadata.'
-    _(page[:content]).must_equal long_content
+    _(page[:content]).must_equal long_content.strip
   end
 
   it 'extracts outlinks from the raw markdown (nav survives the fit filter)' do
@@ -74,6 +74,23 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
     _(page[:outlinks]).must_include 'https://example.com/'
     _(page[:outlinks]).must_include 'https://example.com/guide'
     _(page[:outlinks]).must_include 'https://other.com/x'
+  end
+
+  it 'strips decorative symbol noise from the returned markdown' do
+    noise = '+ = · ( ~ @ · # % · & \* ? · / : ; · \< \> · [] · { · } | · ^ $ · ! · ' * 6
+    markdown = "Some real content that is long enough to pass the threshold.\n\n#{noise}\n"
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: crawl_body(markdown: markdown))
+    page = @backend.fetch('https://example.com')
+
+    _(page[:content]).wont_include '+ = ·'
+    _(page[:content]).must_include 'Some real content'
+  end
+
+  it 'raises EmptyContentError when the page was nothing but noise' do
+    noise = '+ = · ( ~ @ · # % · & \* ? · / : ; · \< \> · [] · { · } | · ^ $ · ! · ' * 6
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: crawl_body(markdown: "#{noise}\n"))
+
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
   end
 
   it 'falls back to og_description when description is missing' do

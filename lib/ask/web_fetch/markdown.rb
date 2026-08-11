@@ -3,6 +3,7 @@
 require 'nokogiri'
 require 'reverse_markdown'
 require 'uri'
+require_relative 'noise_filter'
 
 module Ask
   module WebFetch
@@ -126,7 +127,12 @@ module Ask
         [parts.join, references.join]
       end
 
+      # Shared post-conversion cleanup: drop decorative symbol noise
+      # (NoiseFilter), then normalize whitespace. Every backend's content
+      # runs through this — Local and Browser via generate, Jina and
+      # Crawl4AI explicitly — so the same noise rules apply to all.
       def clean(markdown)
+        markdown = NoiseFilter.filter(markdown)
         markdown.gsub(/[ \t]+\n/, "\n")
                 .gsub(/\n{3,}/, "\n\n")
                 .strip

@@ -32,7 +32,12 @@ module Ask
     #   2. #fetch must return { title: String|nil, content: String }
     #   3. #fetch must raise FetchError (hard failure) or
     #      EmptyContentError (page fetched but nothing usable) on failure
-    #   4. register the class in Ask::Tools::WebFetch.backends
+    #   4. run the page's markdown through Ask::WebFetch::Markdown.clean
+    #      before returning it — backends that hold HTML get this from
+    #      Markdown.generate, backends fed pre-converted markdown (Jina,
+    #      Crawl4AI) must call it explicitly so the shared noise removal
+    #      and whitespace normalization apply everywhere
+    #   5. register the class in Ask::Tools::WebFetch.backends
     #
     # The tool tries each backend in order and returns the first success.
     class Backend

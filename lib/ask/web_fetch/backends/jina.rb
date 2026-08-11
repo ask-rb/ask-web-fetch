@@ -3,6 +3,7 @@
 require 'net/http'
 require 'uri'
 require_relative '../backend'
+require_relative '../markdown'
 
 module Ask
   module WebFetch
@@ -33,11 +34,16 @@ module Ask
           when '200'
             body = res.body.to_s
             raise FetchError, 'challenge page from Jina' if challenge_page?(body)
-            raise EmptyContentError, 'empty response from Jina' unless usable_content?(body)
 
             # Jina only sees rendered markdown — outlinks come from its
-            # links, resolved against the requested URL.
-            { title: nil, description: nil, content: body.strip, outlinks: markdown_outlinks(body, url) }
+            # links, resolved against the requested URL. Content runs
+            # through the same Markdown.clean as the converting backends,
+            # so decorative symbol noise is stripped here too; a page
+            # whose only "content" was noise falls through as empty.
+            content = Markdown.clean(body)
+            raise EmptyContentError, 'empty response from Jina' unless usable_content?(content)
+
+            { title: nil, description: nil, content: content, outlinks: markdown_outlinks(body, url) }
           when '429'
             raise ServerError, 'rate limited by Jina (429)'
           when '401', '403'

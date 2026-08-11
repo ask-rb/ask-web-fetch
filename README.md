@@ -26,6 +26,14 @@ first success:
    headless Chromium, so it renders JS pages the Local backend can't. Free
    without a key (~20 req/min per IP); set `JINA_API_KEY` for higher limits.
 
+Every backend's markdown runs through a shared cleanup (`Markdown.clean`):
+decorative symbol noise — the long, letter-free, repetitive character
+streams some pages render as animated backgrounds or section dividers — is
+stripped, and whitespace is normalized. The filter is conservative: code
+blocks, tables, headings, blockquotes, inline code, and short ASCII-art
+fragments always survive. Tunable via `Ask::WebFetch::NoiseFilter.filter(
+markdown, min_length:, max_entropy:)`.
+
 The tool falls back automatically: if Crawl4AI is absent or fails, Local is
 tried (blocked, timeout, non-HTML, anti-bot challenge, or a JS page with no
 server-side content), then Jina. If every backend fails (rate limit, access
@@ -68,9 +76,13 @@ Ask::Tools::WebFetch.backends = [MyBackend, Ask::WebFetch::Backends::Local]
 
 `#fetch` must return `{ title: String|nil, content: String }` and raise
 `Ask::WebFetch::FetchError` (hard failure) or `EmptyContentError` (page
-fetched but nothing usable). The chain then handles ordering and fallback
-for you. For tests, `Ask::Tools::WebFetch.backends = [...]` can be swapped
-and restored.
+fetched but nothing usable). Run the returned markdown through
+`Ask::WebFetch::Markdown.clean` (backends that convert HTML get this from
+`Markdown.generate`; backends fed pre-converted markdown must call it
+explicitly) so the shared noise removal and whitespace normalization apply
+everywhere. The chain then handles ordering and fallback for you. For
+tests, `Ask::Tools::WebFetch.backends = [...]` can be swapped and
+restored.
 
 ## Installation
 
@@ -125,6 +137,9 @@ No configuration required for the default chain. Optional knobs:
   no content unless Crawl4AI is configured — set `CRAWL4AI_URL` to handle
   them with a self-hosted renderer.
 - Some sites block non-browser requests regardless of User-Agent.
+- Symbol streams that a converter merges *into* a content line (rather
+  than leaving them as their own lines) are out of scope for the
+  markdown-level NoiseFilter — that would need a DOM-level pass.
 
 ## Full documentation
 

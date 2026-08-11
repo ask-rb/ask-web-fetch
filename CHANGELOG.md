@@ -1,3 +1,33 @@
+## [0.5.1] — 2026-08-11
+
+### Added
+
+- `Ask::WebFetch::NoiseFilter`: strips decorative symbol noise from
+  converted markdown — the long, letter-free, repetitive character
+  streams pages render as animated backgrounds, marquees and section
+  dividers (e.g. Hugging Face's storage page ships a
+  `+ = · ( ~ @ # % & * ? / : ; < > [ ] { } | ^ $ !` stream as its page
+  background). Runs on markdown, so every backend benefits — the
+  DOM-level ContentFilter never sees pre-converted markdown from Jina and
+  Crawl4AI.
+
+  Conservative by design: a line is dropped only when it is at least 32
+  characters, contains no letters or digits, is repetitive (distinct
+  chars/length below 0.3), and is not markdown structure — fenced or
+  indented code, table rows and separators, headings, blockquotes, inline
+  code, raw HTML and math all survive, as do short ASCII-art fragments
+  and single-character dividers. Thresholds are tunable via
+  `NoiseFilter.filter(markdown, min_length:, max_entropy:)`.
+
+### Changed
+
+- The `Jina` and `Crawl4AI` backends now run their returned markdown
+  through the same `Markdown.clean` as the converting backends (Local,
+  Browser), so noise removal and whitespace normalization are uniform
+  across the whole chain; a page whose only content was noise now falls
+  through as empty instead of passing. New backends must do the same —
+  noted in the `Backend` base class contract.
+
 ## [0.5.0] — 2026-08-10
 
 ### Added

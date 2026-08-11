@@ -92,6 +92,16 @@ describe Ask::WebFetch::Backends::Local do
 
       _(page[:content]).must_include 'Content.'
     end
+
+    it 'strips decorative symbol noise from the converted page' do
+      stream = '+ = · ( ~ @ · # % · & * ? · / : ; · [ ] · { · } | · ^ $ · ! · ' * 8
+      html = '<html><body><main><p>Real content here, with words.</p>' \
+             "<div class=\"bg-deco\">#{stream}</div></main></body></html>"
+      page = @backend.send(:to_markdown, html, 'https://example.com')
+
+      _(page[:content]).must_include 'Real content here'
+      _(page[:content]).wont_include '+ = ·'
+    end
   end
 
   describe 'fetch' do
