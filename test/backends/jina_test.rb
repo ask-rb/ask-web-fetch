@@ -65,6 +65,13 @@ describe Ask::WebFetch::Backends::Jina do
     _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
   end
 
+  it 'raises ParkedDomainError when the page is a registrar parking page' do
+    parked = "example.com is parked free, courtesy of GoDaddy.com\n\n#{'Ad links for the for-sale domain. ' * 10}"
+    stub_request(:get, /r\.jina\.ai/).to_return(status: 200, body: parked)
+
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ParkedDomainError
+  end
+
   it 'raises ServerError on rate limit (429)' do
     stub_request(:get, /r\.jina\.ai/).to_return(status: 429, body: 'rate limited')
 

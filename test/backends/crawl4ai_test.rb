@@ -93,6 +93,13 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
     _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
   end
 
+  it 'raises ParkedDomainError when the rendered page is a registrar parking page' do
+    parked = "example.com is parked free, courtesy of GoDaddy.com\n\n#{'Ad links for the for-sale domain. ' * 10}"
+    stub_request(:post, /crawl4ai\.test/).to_return(status: 200, body: crawl_body(markdown: parked))
+
+    _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::ParkedDomainError
+  end
+
   it 'falls back to og_description when description is missing' do
     body = {
       success: true,

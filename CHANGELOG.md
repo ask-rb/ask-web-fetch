@@ -1,3 +1,14 @@
+## [0.6.1] — 2026-08-12
+
+### Fixed
+
+- **Parked domains are rejected on EVERY backend, not just Local and
+  Browser.** Jina and Crawl4AI render a registrar parking page fine — the
+  GoDaddy/Namecheap ad came back as "content" when either led the chain
+  (Crawl4AI leads the default chain when configured). Both now run the
+  shared parked-domain detector (0.5.7) on the rendered markdown before
+  returning it, raising `ParkedDomainError` like the converting backends.
+
 ## [0.6.0] — 2026-08-12
 
 ### Added

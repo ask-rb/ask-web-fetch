@@ -39,8 +39,13 @@ module Ask
             # links, resolved against the requested URL. Content runs
             # through the same Markdown.clean as the converting backends,
             # so decorative symbol noise is stripped here too; a page
-            # whose only "content" was noise falls through as empty.
+            # whose only "content" was noise falls through as empty. A
+            # registrar parking page renders fine through Jina — the
+            # shared detector (0.5.7) catches the text markers that
+            # survive conversion, so the ad is rejected, not returned as
+            # the site's content.
             content = Markdown.clean(body)
+            raise ParkedDomainError, "parked domain at #{url} — registrar parking page, not site content" if parked_domain?(content)
             raise EmptyContentError, 'empty response from Jina' unless usable_content?(content)
 
             { title: nil, description: nil, content: content, outlinks: markdown_outlinks(body, url) }
