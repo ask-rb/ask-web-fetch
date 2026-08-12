@@ -1,3 +1,19 @@
+## [0.6.0] — 2026-08-12
+
+### Added
+
+- **The tool's aggregate now collapses to the best error class**
+  (`Ask::Tools::WebFetch.collapse(failures, url)`). Before, when every
+  backend failed, the tool always raised the base `Error` — a parked
+  domain, an empty page, or a dead 4xx all looked alike, and callers
+  could not tell a terminal verdict from a transient one. Now the class
+  carries the explanation, most definitive first: **ParkedDomainError**
+  beats **EmptyContentError** beats a deterministic **FetchError**
+  (every backend failed dead — 4xx/challenge), and any transient
+  failure in the mix (timeout, 5xx, empty render) keeps the retryable
+  base **Error**. The aggregate message still lists every backend and
+  what it said.
+
 ## [0.5.9] — 2026-08-12
 
 ### Added

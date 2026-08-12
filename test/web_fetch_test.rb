@@ -301,4 +301,101 @@ describe Ask::Tools::WebFetch do
       _(result.ok?).must_equal false
     end
   end
+
+  describe 'deterministic failure collapse' do
+    before do
+      WebMock.disable_net_connect!
+      Ask::Tools::WebFetch.backends = nil
+      Ask::WebFetch::Backends::Browser.path = ''
+      @original_local_http = Ask::WebFetch::Backends::Local.http
+      @local_http = StubHttp.new { raise 'unexpected local request' }
+      Ask::WebFetch::Backends::Local.http = @local_http
+    end
+
+    after do
+      Ask::Tools::WebFetch.backends = nil
+      Ask::WebFetch::Backends::Crawl4Ai.url = nil
+      Ask::WebFetch::Backends::Browser.path = nil
+      Ask::WebFetch::Backends::Local.http = @original_local_http
+      WebMock.reset!
+    end
+
+    def stub_local(&handler)
+      @local_http.handler = handler
+    end
+
+    def stub_jina(status:, body: '')
+      stub_request(:get, /r\.jina\.ai/).to_return(status: status, body: body)
+    end
+
+    # A registrar parking page (GoDaddy marker) — Local rejects it with
+    # ParkedDomainError (0.5.7+), the deterministic terminal verdict.
+    def stub_parked_local
+      stub_local do |_, _|
+        http_response(200, '<html><body>example.com is parked free, courtesy of GoDaddy.com</body></html>')
+      end
+    end
+
+    it 'a parked domain keeps its class through the aggregate' do
+      stub_parked_local
+      stub_jina(status: 200)
+
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal false
+      _(result.error_message).must_match(/Ask::WebFetch::ParkedDomainError/)
+      _(result.error_message).must_match(/parked domain/)
+    end
+
+    it 'a parked verdict beats a dead 4xx' do
+      stub_parked_local
+      stub_jina(status: 404, body: 'nope')
+
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal false
+      _(result.error_message).must_match(/Ask::WebFetch::ParkedDomainError/)
+    end
+
+    it 'an empty verdict beats a dead 4xx (the page existed, it had no content)' do
+      stub_local { |_, _| http_response(404, 'nope') }
+      stub_jina(status: 200)
+
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal false
+      _(result.error_message).must_match(/Ask::WebFetch::EmptyContentError/)
+    end
+
+    it 'every backend deterministic collapses to FetchError' do
+      stub_local { |_, _| http_response(404, 'nope') }
+      stub_jina(status: 404, body: 'nope')
+
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal false
+      _(result.error_message).must_match(/Ask::WebFetch::FetchError/)
+    end
+
+    it 'any transient failure keeps the retryable base Error' do
+      stub_local { raise Ask::WebFetch::TimeoutError, 'connect timed out' }
+      stub_jina(status: 404, body: 'nope')
+
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.ok?).must_equal false
+      _(result.error_message).must_match(/Ask::WebFetch::Error/)
+      _(result.error_message).wont_match(/FetchError|EmptyContentError|ParkedDomainError/)
+    end
+
+    it 'reports every backend in the aggregate message' do
+      stub_local { |_, _| http_response(404, 'nope') }
+      stub_jina(status: 404, body: 'nope')
+
+      result = @tool.call('url' => 'https://example.com')
+
+      _(result.error_message).must_match(/Local: got 404/)
+      _(result.error_message).must_match(/Jina: Jina returned 404/)
+    end
+  end
 end

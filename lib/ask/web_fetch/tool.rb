@@ -21,6 +21,13 @@ module Ask
     class WebFetch < Ask::Tool
       DEFAULT_MAX_CHARS = 20_000
 
+      # Errors that mean "the URL is dead" — no amount of retrying changes
+      # the answer. When EVERY backend failed this way, the aggregate
+      # re-raises as FetchError so callers can fail fast; any transient
+      # failure in the mix (timeout, 5xx, empty render) keeps the base
+      # Error, which recovers on retry.
+      DETERMINISTIC = [Ask::WebFetch::FetchError, Ask::WebFetch::EmptyContentError].freeze
+
       # Backend chain, tried in order. Crawl4AI leads when configured
       # (CRAWL4AI_URL), so a present self-hosted renderer is preferred;
       # otherwise Local, with Jina as the last resort, and Browser appended
@@ -37,9 +44,34 @@ module Ask
         end
       end
 
-      class << self
-        attr_writer :backends
+    class << self
+      attr_writer :backends
+
+      # Collapses every backend's failure into ONE error whose class
+      # carries the best explanation. Precedence, most definitive first: a
+      # parked domain beats an empty shell (the shell IS the parking ad's
+      # shell — Local sees the JS redirect stub, Browser the lander),
+      # empty beats a dead 4xx (the page existed, it just had no content),
+      # and any deterministic explanation beats a transient one (transient
+      # keeps the retryable base Error). Clients read the class:
+      # ParkedDomainError / EmptyContentError / FetchError are terminal —
+      # retrying never changes the answer; Error may recover on retry.
+      def collapse(failures, url)
+        detail = failures.map { |backend, e| "#{backend.backend_name}: #{e.message}" }.join('; ')
+        message = "all web fetch backends failed for #{url} (#{detail})"
+
+        classes = failures.map { |_, e| e.class }
+        if classes.any? { |k| k <= Ask::WebFetch::ParkedDomainError }
+          raise Ask::WebFetch::ParkedDomainError, message
+        end
+        if classes.any? { |k| k <= Ask::WebFetch::EmptyContentError }
+          raise Ask::WebFetch::EmptyContentError, message
+        end
+
+        deterministic = failures.all? { |_, e| DETERMINISTIC.any? { |klass| e.is_a?(klass) } }
+        raise(deterministic ? Ask::WebFetch::FetchError : Ask::WebFetch::Error, message)
       end
+    end
 
       description 'Fetch a URL and return its content as clean markdown for LLM consumption. ' \
                   'Use this to read web pages, articles, and documentation.'
@@ -68,10 +100,9 @@ module Ask
         self.class.backends.each do |backend_class|
           return backend_class.new.fetch(url)
         rescue Ask::WebFetch::Error => e
-          failures << "#{backend_class.backend_name}: #{e.message}"
+          failures << [backend_class, e]
         end
-        raise Ask::WebFetch::Error,
-              "all web fetch backends failed for #{url} (#{failures.join('; ')})"
+        self.class.collapse(failures, url)
       end
 
       def format(page, url)
