@@ -46,7 +46,7 @@ module Ask
     #      and whitespace normalization apply everywhere
     #   5. run the extracted page through #guard_page! — the parked-domain
     #      and empty-content verdicts are identical in every backend
-    #   6. register the class in Ask::Tools::WebFetch.backends
+    #   6. register the class in Ask::WebFetch.backends
     #
     # The tool tries each backend in order and returns the first success.
     class Backend

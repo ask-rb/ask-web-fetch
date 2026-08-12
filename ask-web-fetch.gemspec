@@ -8,15 +8,15 @@ Gem::Specification.new do |spec|
   spec.authors = ['Kaka Ruto']
   spec.email = ['kaka@myrrlabs.com']
 
-  spec.summary = 'Web fetch tool for the ask-rb ecosystem'
-  spec.description = 'Provides Ask::Tools::WebFetch, a tool that fetches a URL ' \
-                     'and converts its content to clean markdown for LLM ' \
-                     'consumption. Defaults to a pure Ruby backend (httpx + ' \
-                     'Nokogiri + reverse_markdown) with a Jina Reader fallback ' \
-                     'for JS-rendered or blocked pages, and a real-Chrome ' \
-                     'fallback (Ferrum) that renders JavaScript and lets ' \
-                     'auto-solving Cloudflare challenges complete. Works with ' \
-                     'any ask-rb chat or agent.'
+  spec.summary = 'Web fetch library for the ask-rb ecosystem'
+  spec.description = 'Fetches a URL and converts its content to clean markdown for LLM ' \
+                     'consumption. A pluggable backend chain: pure Ruby httpx + ' \
+                     'Nokogiri + reverse_markdown by default, a Jina Reader fallback ' \
+                     'for JS-rendered or blocked pages, and a real-Chrome fallback ' \
+                     '(Ferrum) that renders JavaScript and lets auto-solving ' \
+                     'Cloudflare challenges complete. The capability layer only — ' \
+                     'tool framing (MCP servers, agent tools) is provided by the ' \
+                     'consumers.'
   spec.homepage = 'https://github.com/ask-rb/ask-web-fetch'
   spec.license = 'MIT'
 
@@ -30,7 +30,6 @@ Gem::Specification.new do |spec|
   spec.files = Dir['lib/**/*', 'LICENSE', 'README.md']
   spec.require_paths = ['lib']
 
-  spec.add_dependency 'ask-tools', '>= 0.1'
   spec.add_dependency 'ferrum', '>= 0.14'
   spec.add_dependency 'httpx', '>= 1.0'
   spec.add_dependency 'nokogiri', '>= 1.15'

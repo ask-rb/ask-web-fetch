@@ -1,3 +1,23 @@
+## [0.7.0] — 2026-08-12
+
+### Changed
+
+- **A library, not a tool.** `Ask::Tools::WebFetch` is gone and so is the
+  `ask-tools` dependency (and with it `ask-core` + `ask-schema`). The
+  capability lives at the module level:
+  `Ask::WebFetch.fetch(url, max_chars:)` returns the LLM-ready markdown
+  string, `Ask::WebFetch.fetch_page(url)` the raw page hash, and
+  `Ask::WebFetch.collapse(failures, url)` the classed failure aggregate.
+  The backend chain is configured with `Ask::WebFetch.backends` /
+  `backends=`. Tool framing — name, parameter schema, result wrapping —
+  is a consumer concern: ask-web-fetch-mcp owns the `ask_web_fetch` tool,
+  and agents wrap the library the way they wrap any capability.
+
+### Removed
+
+- `Ask::Tools::WebFetch` (moved to ask-web-fetch-mcp as the `ask_web_fetch`
+  tool), the `ask-tools` dependency, and the registry registration.
+
 ## [0.6.2] — 2026-08-12
 
 ### Changed
