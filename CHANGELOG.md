@@ -1,3 +1,19 @@
+## [0.7.1] — 2026-08-12
+
+### Added
+
+- **The native agent tool is back — as an optional integration.**
+  `Ask::Tools::WebFetch` returns: a thin `Ask::Tool` adapter over the
+  library (chain config and the fetch itself delegate to
+  `Ask::WebFetch`), registered in the `Ask::Tools` registry for agent
+  frameworks that resolve tools by name (ask-agent's `tool: :web_fetch`,
+  ask-app-server, llm-proxy). It loads and registers **only when
+  ask-tools is present** (a LoadError-guarded require in the library's
+  entry file), so the library still works standalone and backend-only
+  consumers — crawlers, pipelines — pay nothing for it. Agent frameworks
+  all ship ask-tools, so their users get the tool with no extra step.
+  ask-tools is a development dependency of the gem, never a runtime one.
+
 ## [0.7.0] — 2026-08-12
 
 ### Changed

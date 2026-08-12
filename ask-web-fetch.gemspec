@@ -38,4 +38,8 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'minitest', '~> 5.25'
   spec.add_development_dependency 'rake', '~> 13.0'
   spec.add_development_dependency 'webmock', '~> 3.26'
+  # The native agent tool (Ask::Tools::WebFetch) is an optional runtime
+  # integration — in the gem's own suite it is always present, so the
+  # tool tests run; consumers decide at install time.
+  spec.add_development_dependency 'ask-tools', '>= 0.1'
 end

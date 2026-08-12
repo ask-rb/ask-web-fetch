@@ -10,6 +10,19 @@ require_relative 'web_fetch/backends/crawl4ai'
 require_relative 'web_fetch/backends/jina'
 require_relative 'web_fetch/backends/browser'
 
+# The native agent tool (Ask::Tools::WebFetch) is an OPTIONAL integration:
+# it loads and registers only when ask-tools is present. The library works
+# standalone — backend-only consumers (crawlers, pipelines) pay nothing —
+# while agent frameworks (ask-agent, ask-app-server, llm-proxy) all ship
+# ask-tools and get the registry tool with no extra step. Only the
+# ask-tools miss is swallowed; any other LoadError is real.
+begin
+  require 'ask-tools'
+  require_relative 'web_fetch/tool'
+rescue LoadError => e
+  raise unless e.path == 'ask-tools'
+end
+
 module Ask
   # Fetches a URL and returns its content as clean markdown for LLM
   # consumption. The capability layer: a pluggable backend chain, a
