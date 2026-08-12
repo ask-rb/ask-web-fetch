@@ -1,3 +1,24 @@
+## [0.6.2] — 2026-08-12
+
+### Changed
+
+- **One shared page guard, every backend.** The parked-domain and
+  empty-content verdicts (`ParkedDomainError` / `EmptyContentError`) were
+  raised inline in all four backends at slightly different points with
+  duplicated messages. They now live once, as
+  `Backend#guard_page!(url, content, raw_body: nil)`, and every backend
+  calls it at the same point in its flow — after extraction, before
+  returning. Each backend passes the strings it has: `raw_body` where it
+  saw raw HTML (Local, Browser — the HTML-only markers `ap:"parking"`,
+  `parking-lander`, `LANDER_SYSTEM="PW"` live in scripts and assets that
+  never survive conversion) and `content` everywhere (the prose markers
+  survive conversion, so markdown-only backends reject the ad too).
+  What is raised is unchanged everywhere, and the verdicts now read
+  identically in the collapse detail (Jina's empty message became the
+  same "no readable content at <url>" as the rest). A new backend cannot
+  accidentally treat a parked domain as content: the contract is one
+  method. 6 new contract tests, 208 green.
+
 ## [0.6.1] — 2026-08-12
 
 ### Fixed

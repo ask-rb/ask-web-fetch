@@ -48,16 +48,12 @@ module Ask
           # Parked-domain pages are not content: the domain owner parked it
           # with a registrar and the page is an ad for buying the domain
           # (GoDaddy/Namecheap/Sedo parking). A content company must never
-          # store these as if they were the site. Checked BEFORE the
-          # content-minimum — a parking page can render as "content" above
-          # the minimum (puncta.ai: 395c of Namecheap auction ads), and
-          # must still be rejected. Detectable from the server HTML —
-          # parked pages are fully server-rendered, so both Local and
-          # Browser see the same ad.
-          if parked_domain?(body)
-            raise ParkedDomainError, "parked domain at #{url} — registrar parking page, not site content"
-          end
-          raise EmptyContentError, "no readable content at #{url}" unless usable_content?(page[:content])
+          # store these as if they were the site. The shared guard checks
+          # the raw server HTML first (parked pages are fully
+          # server-rendered — the HTML-only markers live in scripts and
+          # assets), then the content minimum, then the JS-shell
+          # completeness signal below.
+          guard_page!(url, page[:content], raw_body: body)
           # The completeness signal: a JS-app shell whose server HTML
           # renders little is a TRUNCATED page, not a complete one — the
           # real content awaits client-side JS that Local cannot run.

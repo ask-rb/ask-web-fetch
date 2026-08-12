@@ -44,7 +44,9 @@ module Ask
     #      Markdown.generate, backends fed pre-converted markdown (Jina,
     #      Crawl4AI) must call it explicitly so the shared noise removal
     #      and whitespace normalization apply everywhere
-    #   5. register the class in Ask::Tools::WebFetch.backends
+    #   5. run the extracted page through #guard_page! — the parked-domain
+    #      and empty-content verdicts are identical in every backend
+    #   6. register the class in Ask::Tools::WebFetch.backends
     #
     # The tool tries each backend in order and returns the first success.
     class Backend
@@ -90,6 +92,29 @@ module Ask
       # Raises FetchError or EmptyContentError on failure.
       def fetch(url)
         raise NotImplementedError, "#{self.class} must implement #fetch(url)"
+      end
+
+      # The shared page guard, run by EVERY backend at the same point in
+      # its flow — after extraction, before returning: a registrar parking
+      # page raises ParkedDomainError, content below the minimum raises
+      # EmptyContentError. Same verdicts, same messages, everywhere; a
+      # backend's only job is to pass the strings it has.
+      #
+      # raw_body: the raw HTML the backend saw, where it saw it (Local,
+      # Browser) — the HTML-only markers (ap:"parking", parking-lander,
+      # LANDER_SYSTEM="PW") live in scripts and assets that never survive
+      # conversion to markdown. content: what the backend would return
+      # (all four) — the prose markers survive conversion, so a backend
+      # that only ever sees rendered text (Jina, Crawl4AI) still rejects
+      # the ad.
+      #
+      # Parked is checked BEFORE the content minimum on purpose: a parking
+      # page can render above it (puncta.ai: 395c of Namecheap auction
+      # ads) and must still be rejected.
+      def guard_page!(url, content, raw_body: nil)
+        raise ParkedDomainError,
+              "parked domain at #{url} — registrar parking page, not site content" if parked_domain?(raw_body) || parked_domain?(content)
+        raise EmptyContentError, "no readable content at #{url}" unless usable_content?(content)
       end
 
       # --- outlinks (crawler discovery) ---

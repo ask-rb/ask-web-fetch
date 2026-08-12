@@ -35,18 +35,17 @@ module Ask
             body = res.body.to_s
             raise FetchError, 'challenge page from Jina' if challenge_page?(body)
 
+            content = Markdown.clean(body)
             # Jina only sees rendered markdown — outlinks come from its
             # links, resolved against the requested URL. Content runs
             # through the same Markdown.clean as the converting backends,
             # so decorative symbol noise is stripped here too; a page
             # whose only "content" was noise falls through as empty. A
             # registrar parking page renders fine through Jina — the
-            # shared detector (0.5.7) catches the text markers that
-            # survive conversion, so the ad is rejected, not returned as
-            # the site's content.
-            content = Markdown.clean(body)
-            raise ParkedDomainError, "parked domain at #{url} — registrar parking page, not site content" if parked_domain?(content)
-            raise EmptyContentError, 'empty response from Jina' unless usable_content?(content)
+            # shared guard's prose markers catch it (the HTML-only
+            # markers never reach a markdown-only backend), so the ad is
+            # rejected, not returned as the site's content.
+            guard_page!(url, content)
 
             { title: nil, description: nil, content: content, outlinks: markdown_outlinks(body, url) }
           when '429'

@@ -56,12 +56,12 @@ module Ask
 
           page = to_page(body, url)
           # A registrar parking page renders fine in headless Chrome too —
-          # the shared detector (0.5.7) catches the text markers that
-          # survive conversion, so the ad is rejected, not returned as
-          # the site's content. Crawl4AI leads the default chain, so this
-          # check is what keeps parked domains out of every result.
-          raise ParkedDomainError, "parked domain at #{url} — registrar parking page, not site content" if parked_domain?(page[:content])
-          raise EmptyContentError, "no readable content at #{url}" unless usable_content?(page[:content])
+          # the shared guard's prose markers catch it (the HTML-only
+          # markers never reach a markdown-only backend), so the ad is
+          # rejected, not returned as the site's content. Crawl4AI leads
+          # the default chain, so this guard is what keeps parked domains
+          # out of every result.
+          guard_page!(url, page[:content])
 
           page
         rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED,

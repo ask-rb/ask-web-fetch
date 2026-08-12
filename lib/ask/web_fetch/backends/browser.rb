@@ -201,13 +201,12 @@ module Ask
           end
           # Browser renders the parked page a JS redirect lands on (the
           # server shell hands /lander to JS) — Local never sees it. The
-          # shared parked-domain detector catches it here; the distinct
-          # ParkedDomainError lets the pipeline classify (never retry) it.
-          raise ParkedDomainError, "parked domain at #{url} — registrar parking page, not site content" if parked_domain?(body)
-
+          # shared guard catches it on the rendered HTML (raw_body) and
+          # the converted content; the distinct ParkedDomainError lets the
+          # pipeline classify (never retry) it.
           result = Markdown.generate(body, base_url: url, filter: self.class.content_filter)
           result[:outlinks] = outlink_urls(body, url)
-          raise EmptyContentError, "no readable content at #{url}" unless usable_content?(result[:content])
+          guard_page!(url, result[:content], raw_body: body)
 
           result
         end
