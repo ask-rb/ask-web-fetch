@@ -45,7 +45,32 @@ module Ask
 
           page = to_markdown(body, url)
           page[:redirected] = redirect
+          # Parked-domain pages are not content: the domain owner parked it
+          # with a registrar and the page is an ad for buying the domain
+          # (GoDaddy/Namecheap/Sedo parking). A content company must never
+          # store these as if they were the site. Checked BEFORE the
+          # content-minimum — a parking page can render as "content" above
+          # the minimum (puncta.ai: 395c of Namecheap auction ads), and
+          # must still be rejected. Detectable from the server HTML —
+          # parked pages are fully server-rendered, so both Local and
+          # Browser see the same ad.
+          if parked_domain?(body)
+            raise ParkedDomainError, "parked domain at #{url} — registrar parking page, not site content"
+          end
           raise EmptyContentError, "no readable content at #{url}" unless usable_content?(page[:content])
+          # The completeness signal: a JS-app shell whose server HTML
+          # renders little is a TRUNCATED page, not a complete one — the
+          # real content awaits client-side JS that Local cannot run.
+          # Storing the shell as success would silently under-deliver
+          # (airbnb: 613KB server HTML -> 143 chars of markdown); failing
+          # through lets the chain prefer a rendering backend (Browser),
+          # and keeps a partial page from ever being stored as the real
+          # thing. Two detectors: known framework markers, or a large
+          # HTML page with almost no server-rendered text.
+          if js_app_shell?(body) && page[:content].length < SHELL_CONTENT_THRESHOLD
+            raise EmptyContentError,
+              "JS-app shell at #{url} — server HTML renders only #{page[:content].length} chars; a rendering backend is required"
+          end
 
           page
         rescue Errno::ECONNREFUSED, Errno::ECONNRESET, SocketError, URI::InvalidURIError => e
@@ -53,6 +78,40 @@ module Ask
           # keeps the "only Ask::WebFetch errors escape" invariant even if
           # a transport bug lets a raw socket error through.
           raise TimeoutError, "#{e.class}: #{e.message}"
+        end
+
+        # Client-rendered framework markers: the server HTML is (at least
+        # partly) a shell awaiting JS. Deliberately narrow — generic terms
+        # like "script" or "root" appear on every page; these are the
+        # specific footprints of React/Vue/Next/Nuxt app shells.
+        JS_APP_SHELL_MARKERS = /id=["'](?:root|app|__next|site-content)["']|__NEXT_DATA__|window\.__NUXT__|ng-app|data-reactroot/
+
+        # Markdown below this from a JS-app shell is "server sent a shell",
+        # not "page is genuinely short" — a real page (even a short one)
+        # is usually server-rendered above this. Tunable; the chain turns
+        # the signal into "prefer Browser for this URL".
+        SHELL_CONTENT_THRESHOLD = 4_000
+
+        # A page whose server HTML is large but yields almost no text is a
+        # shell whatever framework it uses (airbnb: 613KB HTML -> 143 chars
+        # of markdown). Framework markers miss these; the size ratio
+        # catches them. nytimes (1.4MB -> 7.5k text) stays above the text
+        # floor and is correctly left to Local.
+        SHELL_HTML_BYTES = 20_000
+
+        def js_app_shell?(body)
+          body.to_s.match?(JS_APP_SHELL_MARKERS) ||
+            (body.to_s.bytesize > SHELL_HTML_BYTES && markdown_visible_chars(body) < SHELL_CONTENT_THRESHOLD)
+        end
+
+        # A cheap text estimate from the raw HTML (tags stripped) — the
+        # "how much did the server actually render" number. Deliberately
+        # rough: it only feeds a shell-vs-page heuristic.
+        def markdown_visible_chars(body)
+          body.to_s.gsub(/<script[\s\S]*?<\/script>/i, "")
+            .gsub(/<style[\s\S]*?<\/style>/i, "")
+            .gsub(/<[^>]+>/, " ")
+            .gsub(/\s+/, " ").strip.length
         end
 
         # Parses +html+ and returns { title:, description:, content:,

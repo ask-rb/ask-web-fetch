@@ -27,7 +27,11 @@ module Ask
 
         # Creates a page as a fresh tab in the attached browser.
         def create_page
-          Page.new(client, timeout: @timeout)
+          # Capture the frontmost app once per browser instance, not per
+          # page: a batch of fetches steals focus once and restores to the
+          # same app, and consecutive fetches don't fight each other.
+          @frontmost_app ||= FocusRestorer.capture_frontmost
+          Page.new(client, timeout: @timeout, restore_focus_to: @frontmost_app)
         end
 
         private
@@ -43,13 +47,17 @@ module Ask
         # enough CDP for the Browser backend: navigate, read title/URL/HTML,
         # and report the main-document HTTP status.
         class Page
-          def initialize(client, timeout:)
+          def initialize(client, timeout:, restore_focus_to: nil)
             @client = client
             @timeout = timeout
+            @restore_focus_to = restore_focus_to
             @target_id = @client.command('Target.createTarget', url: 'about:blank')['targetId']
             @session = @client.session(
               @client.command('Target.attachToTarget', targetId: @target_id, flatten: true)['sessionId']
             )
+            # Subscribed BEFORE any navigation so the idle wait sees the
+            # page's real load traffic (lazy SPAs render in waves).
+            @network = Network.new(self)
           end
 
           # Navigates and does not return until the document has actually
@@ -65,7 +73,6 @@ module Ask
 
             wait_for_load
           end
-
           def title
             evaluate('document.title')
           end
@@ -78,17 +85,23 @@ module Ask
             evaluate('document.documentElement.outerHTML') || ''
           end
 
-          # Minimal network facade for the Browser backend. The status comes
-          # from the Navigation Timing API (the main document's HTTP status);
-          # attached pages need no idle wait — they only exist once loaded.
+          # Minimal network facade for the Browser backend: status from the
+          # Navigation Timing API, idle from CDP Network events (subscribed
+          # in the constructor, before navigation).
           def network
-            @network ||= Network.new(self)
+            @network
           end
 
           def close
             @client.command('Target.closeTarget', targetId: @target_id)
           rescue Ferrum::Error
             nil
+          ensure
+            # The attached dev Chrome window steals focus when a tab is
+            # created; give it back once the tab is gone — but only to an
+            # app that ISN'T Chrome, so a fetch while the user is already
+            # looking at Chrome doesn't ping-pong.
+            FocusRestorer.restore_frontmost(@restore_focus_to)
           end
 
           def evaluate(expression)
@@ -122,10 +135,22 @@ module Ask
             nil
           end
 
-          # Status + no-op idle for the Browser backend's fetch flow.
+          # Real network-idle detection for the attached browser, via CDP's
+          # Network domain events. The launched-browser path gets idle
+          # waiting from Ferrum's network; the attached path previously
+          # skipped it entirely (a no-op), which read lazy-loading SPAs too
+          # early — reddit's post list renders in waves, and the fetch saw
+          # only the first 2.6k of an 8k+ body. Tracks requestStarted /
+          # requestFinished events on the page session and waits until the
+          # network has been quiet for +duration+, capped at +timeout+.
           class Network
             def initialize(page)
               @page = page
+              @session = page.instance_variable_get(:@session)
+              @in_flight = 0
+              @quiet_since = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+              @mutex = Mutex.new
+              subscribe
             end
 
             def status
@@ -137,10 +162,84 @@ module Ask
               0
             end
 
-            def wait_for_idle(*)
+            def wait_for_idle(duration:, timeout:)
+              deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+              loop do
+                quiet = @mutex.synchronize { @in_flight.zero? }
+                if quiet && Process.clock_gettime(Process::CLOCK_MONOTONIC) - @quiet_since >= duration
+                  return
+                end
+                raise Ferrum::TimeoutError, "network did not go idle within #{timeout}s" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+                sleep 0.1
+              end
+            end
+
+            private
+
+            # CDP events arrive on the session's message loop; Ferrum's
+            # session dispatches them to subscribed handlers. Track the
+            # request lifecycle so "quiet" means no request has been in
+            # flight for the duration — the signal lazy SPAs settle on.
+            # Defensive: a minimal/mock session without event support
+            # (some test doubles) just skips subscription — the load-wait
+            # in go_to is still the floor.
+            def subscribe
+              return unless @session.respond_to?(:on)
+
+              @session.on('Network.requestWillBeSent') { @mutex.synchronize { @in_flight += 1 } }
+              @session.on('Network.responseReceived') { @mutex.synchronize { @quiet_since = Process.clock_gettime(Process::CLOCK_MONOTONIC) } }
+              @session.on('Network.loadingFinished') { @mutex.synchronize { @in_flight -= 1 if @in_flight.positive? } }
+              @session.on('Network.loadingFailed') { @mutex.synchronize { @in_flight -= 1 if @in_flight.positive? } }
+              @session.command('Network.enable')
+            rescue Ferrum::Error
+              # Some attached browsers reject Network.enable (unlikely);
+              # fall back to the load-wait already done in go_to.
               nil
             end
           end
+        end
+      end
+
+      # macOS dev convenience: the attached Chrome window steals focus when
+      # a tab is created, and a developer working in another app wants it
+      # back once the tab is closed. Captures the frontmost app before the
+      # page is created and re-activates it after close. Deliberately
+      # cheap and quiet: one osascript each way, rescued to nil everywhere
+      # else (prod is headless Linux — this module is a no-op there, and
+      # even on macOS a failure must never fail a fetch).
+      module FocusRestorer
+        # The command runner, injectable for tests (minitest 6 ships no
+        # mock support, so tests swap this instead of stubbing).
+        class << self
+          attr_writer :runner
+
+          def runner
+            @runner ||= method(:system)
+          end
+        end
+
+        def self.capture_frontmost
+          return nil unless RUBY_PLATFORM.include?('darwin')
+
+          out = `osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null`.strip
+          out.empty? ? nil : out
+        rescue StandardError
+          nil
+        end
+
+        def self.restore_frontmost(app)
+          return if app.nil? || app.empty?
+
+          # Never ping-pong: if the user is already looking at Chrome (or
+          # headless/CI has no frontmost app at all), there's nothing to
+          # give back.
+          return if app == 'Google Chrome'
+
+          runner.call("osascript -e 'tell application \"#{app}\" to activate' 2>/dev/null")
+          nil
+        rescue StandardError
+          nil
         end
       end
     end

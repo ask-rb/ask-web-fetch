@@ -124,6 +124,29 @@ describe Ask::WebFetch::Backends::AttachedBrowser do
 
       _(client.commands).must_include ['Target.closeTarget', { targetId: 't1' }]
     end
+
+    it 'restores the captured frontmost app when the tab closes' do
+      client = FakeCDPClient.new
+      browser = Ask::WebFetch::Backends::AttachedBrowser.new('ws://fake', timeout: 10, client: client)
+      # Inject a runner that records the osascript activation.
+      captured = nil
+      Ask::WebFetch::Backends::FocusRestorer.runner = ->(cmd) { captured = cmd }
+      browser.instance_variable_set(:@frontmost_app, 'Safari')
+      page = browser.create_page
+      page.close
+      _(captured).must_match(/Safari/)
+    ensure
+      Ask::WebFetch::Backends::FocusRestorer.runner = nil
+    end
+
+    it 'never restores to Chrome itself — no focus ping-pong' do
+      called = false
+      Ask::WebFetch::Backends::FocusRestorer.runner = ->(*) { called = true }
+      Ask::WebFetch::Backends::FocusRestorer.restore_frontmost('Google Chrome')
+      _(called).must_equal false
+    ensure
+      Ask::WebFetch::Backends::FocusRestorer.runner = nil
+    end
   end
 
   describe 'through the Browser backend' do
@@ -165,6 +188,37 @@ describe Ask::WebFetch::Backends::AttachedBrowser do
       _(result[:content]).must_include 'Real article content'
     end
 
+    it 'warms the domain root and retries when the deep URL is challenged' do
+      # First visit to the deep URL serves a challenge shell; the warm
+      # pass navigates to the domain root (where the challenge auto-solves)
+      # and earns the clearance; the retried deep URL then serves content.
+      # Title clears once the root has been visited (navigate #2).
+      navigations = []
+      client = FakeCDPClient.new(
+        title: ->(calls) { calls <= 3 ? 'Just a moment...' : 'Bot post' },
+        status: 200,
+        html: '<html><body>cf-chl-solving</body></html>'
+      )
+      # Serve real content after the warm pass has visited the root.
+      real_html = '<html><head><title>Bot post</title></head><body><p>Real article content with enough length to clear the minimum content threshold for a usable page.</p></body></html>'
+      client.define_singleton_method(:session_command) do |method, params|
+        if method == 'Page.navigate'
+          navigations << params[:url]
+          @html = real_html if navigations.include?('https://example.com')
+        end
+        super(method, params)
+      end
+      Ask::WebFetch::Backends::Browser.warmed_domains.clear
+      Ask::WebFetch::Backends::Browser.browser =
+        Ask::WebFetch::Backends::AttachedBrowser.new('ws://fake', timeout: 10, client: client)
+
+      result = Ask::WebFetch::Backends::Browser.new.fetch('https://example.com/deep')
+
+      _(navigations).must_include 'https://example.com' # root warm pass happened
+      _(navigations).must_include 'https://example.com/deep' # URL retried after warm
+      _(result[:content]).must_include 'Real article content'
+    end
+
     it 'raises FetchError on an HTTP error status' do
       client = FakeCDPClient.new(status: 404, html: '<html><body><p>not found</p></body></html>')
       Ask::WebFetch::Backends::Browser.browser =
@@ -173,6 +227,21 @@ describe Ask::WebFetch::Backends::AttachedBrowser do
       err = _(-> { Ask::WebFetch::Backends::Browser.new.fetch('https://example.com') })
             .must_raise Ask::WebFetch::FetchError
       _(err.message).must_include 'got 404'
+    end
+
+    it 'fails through on a parked-domain page rendered by the browser' do
+      # The JS redirect lands on GoDaddy's parking-lander — the browser
+      # renders it, and the shared parked-domain detector must reject it.
+      client = FakeCDPClient.new(
+        status: 200,
+        html: '<html><head><title>ayur.ai</title></head><body><script>window._trfd=window._trfd||[],window._trfd.push({ap:"parking"})</script><div id="root"></div></body></html>'
+      )
+      Ask::WebFetch::Backends::Browser.browser =
+        Ask::WebFetch::Backends::AttachedBrowser.new('ws://fake', timeout: 10, client: client)
+
+      err = _(-> { Ask::WebFetch::Backends::Browser.new.fetch('https://ayur.ai') })
+            .must_raise Ask::WebFetch::ParkedDomainError
+      _(err.message).must_include 'parked domain'
     end
   end
 end

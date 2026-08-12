@@ -16,6 +16,13 @@ module Ask
     # A backend that fetched the page but found nothing usable in it.
     class EmptyContentError < Error; end
 
+    # A backend that fetched a REGISTRAR PARKING PAGE — an ad for a
+    # parked (for-sale) domain, not the site's content. Deterministic and
+    # terminal: retrying will never turn a parking ad into content, so
+    # the pipeline must classify (not retry) it. A subclass of
+    # EmptyContentError so existing empty-content handling still applies.
+    class ParkedDomainError < EmptyContentError; end
+
     # Network-level failure — timeout, connection refused/reset, bad
     # socket. Transient: the same URL may succeed on retry.
     class TimeoutError < Error; end
@@ -58,6 +65,18 @@ module Ask
       # pages can contain the word "captcha" in unrelated config/JS (e.g.
       # Wikipedia embeds an hcaptcha edit-config flag on every page).
       CHALLENGE_RE = /just a moment|checking your browser|cf-chl/i
+
+      # Registrar parking-page markers: the page is an ad for a parked
+      # (for-sale) domain, not the site's content. A content company must
+      # never store these as if they were the site. Observed live on the
+      # CC list, three shapes: (a) GoDaddy's parking-lander JS app
+      # (ap:"parking" flag, parking-lander asset, LANDER_SYSTEM="PW")
+      # served at /lander, (b) Namecheap's parking app (utm_campaign=
+      # nc_market + parkingpage links), and (c) static registrar pages
+      # ("is parked free, courtesy of GoDaddy.com", "is registered at
+      # Namecheap"). Deliberately specific — generic terms like "domain"
+      # or "for sale" appear on real pages.
+      PARKED_DOMAIN_MARKERS = /ap:"parking"|parking-lander|LANDER_SYSTEM="PW"|utm_campaign=nc_market|utm_source=parkingpage|is parked free, courtesy of GoDaddy|is available on GoDaddy Auctions|is registered at Namecheap/i
 
       def self.backend_name
         name.split('::').last
@@ -116,6 +135,10 @@ module Ask
 
       def challenge_page?(body)
         body.to_s.match?(CHALLENGE_RE)
+      end
+
+      def parked_domain?(body)
+        body.to_s.match?(PARKED_DOMAIN_MARKERS)
       end
 
       def usable_content?(content)

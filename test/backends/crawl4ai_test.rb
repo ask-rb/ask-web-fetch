@@ -40,7 +40,7 @@ describe Ask::WebFetch::Backends::Crawl4Ai do
 
   it 'POSTs the URL to the /crawl endpoint' do
     stub_request(:post, 'http://crawl4ai.test/crawl')
-      .with(body: { urls: ['https://example.com'], crawler_config: { cache_mode: 'bypass', timeout: 60 } }.to_json)
+      .with(body: { urls: ["https://example.com"], crawler_config: { cache_mode: "bypass", timeout: 60, enable_stealth: true } }.to_json)
       .to_return(status: 200, body: crawl_body)
 
     @backend.fetch('https://example.com')

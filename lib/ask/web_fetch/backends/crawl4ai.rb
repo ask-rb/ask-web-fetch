@@ -79,7 +79,18 @@ module Ask
           req['Authorization'] = "Bearer #{self.class.token}" if self.class.token
           req.body = JSON.generate(
             urls: [url],
-            crawler_config: { cache_mode: 'bypass', timeout: CRAWL_TIMEOUT }
+            crawler_config: {
+              cache_mode: 'bypass',
+              timeout: CRAWL_TIMEOUT,
+              # Crawl4AI's server defaults to stealth OFF — a plain
+              # headless launch that bot protection fingerprints instantly
+              # (observed: Cloudflare/DataDome pages classified blocked
+              # before the render even finished). Ask for stealth so the
+              # service actually attempts challenge pages instead of
+              # pre-emptively failing them. (simulate_user/magic are
+              # BrowserConfig fields and rejected on untrusted requests.)
+              enable_stealth: true
+            }
           )
 
           res = http.request(req)

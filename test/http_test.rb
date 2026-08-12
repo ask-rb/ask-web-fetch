@@ -88,11 +88,24 @@ describe Ask::WebFetch::Http do
     @server.close
   end
 
-  it 'reuses one pooled connection across sequential requests' do
-    3.times { @server.respond(status: 200, body: '<html>a</html>') }
-    3.times { Ask::WebFetch::Http.get("#{@base}/#{rand(1000)}") }
+  it 'serves sequential requests across hosts without hanging' do
+    # Regression for the httpx 1.8.1 :persistent wedge: a session that
+    # held one pooled connection would hang forever inside the selector
+    # loop when the next request went to a NEW host (reproduced in plain
+    # Ruby against real sites). The transport no longer uses :persistent;
+    # the contract is correctness across hosts, at the cost of a fresh
+    # connection per host. Each request must complete, in order.
+    @server.respond(status: 200, body: '<html>first</html>')
+    first = Ask::WebFetch::Http.get("#{@base}/one")
+    _(first.body).must_include 'first'
 
-    _(@server.connections).must_equal 1
+    @server.respond(status: 200, body: '<html>second</html>')
+    second = Ask::WebFetch::Http.get("#{@base}/two")
+    _(second.body).must_include 'second'
+
+    @server.respond(status: 200, body: '<html>third</html>')
+    third = Ask::WebFetch::Http.get("#{@base}/three")
+    _(third.body).must_include 'third'
   end
 
   it 'decodes gzip-encoded bodies' do

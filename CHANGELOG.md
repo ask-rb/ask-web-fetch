@@ -1,3 +1,100 @@
+## [0.5.9] — 2026-08-12
+
+### Added
+
+- **ParkedDomainError** — a distinct error class for registrar parking
+  pages (GoDaddy/Namecheap ads), so the pipeline can classify a parked
+  domain instead of treating it as generic empty content. Deterministic
+  and terminal: retrying never turns a parking ad into content.
+
+## [0.5.8] — 2026-08-12
+
+### Added
+
+- **Focus restore for the attached dev browser.** Creating a CDP tab
+  steals focus to the Chrome window; on close, the previously frontmost
+  app (captured before the tab was created, once per browser instance)
+  is re-activated via osascript — macOS only, and never to Chrome
+  itself (no ping-pong when the user is already looking at the debug
+  browser). No-op everywhere else (prod is headless Linux).
+
+## [0.5.7] — 2026-08-11
+
+### Added
+
+- **Parked-domain detection.** A parked (for-sale) domain serves a
+  registrar ad, not site content — storing it as the site would
+  silently under-deliver (observed live on the CC list: GoDaddy's
+  parking-lander with ap:"parking" served after a JS redirect, and
+  Namecheap's nc_market parking app). Both Local and Browser now
+  reject parked pages with "parked domain" via a shared detector on
+  the backend base; Browser catches the parked lander that only a JS
+  redirect reaches.
+
+## [0.5.6] — 2026-08-11
+
+### Added
+
+- **JS-shell completeness signal in the Local backend.** A client-
+  rendered app whose server HTML renders little (airbnb: 613KB -> 143
+  chars of markdown) was previously stored as a successful fetch — a
+  truncated page silently under-delivering. Local now fails through
+  with "JS-app shell" when it detects (a) known framework markers
+  (React/Vue/Next/Nuxt footprints) or (b) a large HTML page with almost
+  no server-rendered text, and extraction is below the shell threshold.
+  The chain then prefers a rendering backend (Browser), and a partial
+  page is never stored as the real thing. Server-rendered pages
+  (nytimes, theverge) are unaffected.
+
+## [0.5.5] — 2026-08-11
+
+### Added
+
+- **Warm-and-retry for challenge pages.** When the Browser backend hits
+  a challenge page, it now visits the DOMAIN ROOT first (where a
+  managed challenge auto-solves for a trusted browser), earning the
+  domain's clearance cookie in the persistent profile, then retries the
+  URL once. Subsequent fetches for that domain find the cookie and
+  never warm again. Bounded: one warm per domain per process, one
+  retry per fetch — a DataDome-class wall still fails fast, never
+  wedging the queue.
+
+## [0.5.4] — 2026-08-11
+
+### Changed
+
+- **Crawl4AI backend asks for stealth.** The service defaults to stealth
+  OFF, so protected pages (Cloudflare/DataDome) were classified as
+  blocked before the render finished. The crawl request now sends
+  `enable_stealth: true` so the service attempts challenge pages.
+  (simulate_user/magic are BrowserConfig fields and rejected on
+  untrusted requests — stealth is the permitted lever.)
+
+## [0.5.3] — 2026-08-11
+
+### Fixed
+
+- **Attached-browser idle wait was a no-op.** The Browser backend in
+  CDP-attached mode never waited for the network to go quiet — lazy
+  SPAs (reddit, npm) render their content in waves, and the fetch read
+  only the first wave (1.9k of 12k chars). Real network-idle detection
+  now tracks CDP Network events (requestWillBeSent / loadingFinished)
+  on the page session, subscribed before navigation, and waits for
+  quiet up to the idle timeout.
+
+## [0.5.2] — 2026-08-11
+
+### Fixed
+
+- **No more hangs on multi-host crawls.** The Local backend transport
+  used the httpx :persistent plugin, which in httpx 1.8.1 wedges forever
+  inside the selector loop when a session that already holds a pooled
+  connection opens one to a NEW host — the operation timeout never
+  fires, and the fetch hangs indefinitely (reproduced in plain Ruby:
+  example.com then nytimes.com on one session). Dropped `:persistent`
+  for an explicit `:retries` plugin: a fresh connection per host, one
+  TLS handshake per page, and never a hang. Regression-tested.
+
 ## [0.5.1] — 2026-08-11
 
 ### Added

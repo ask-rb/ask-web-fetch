@@ -48,17 +48,24 @@ module Ask
 
       # One pooled session per thread — httpx sessions are not thread-safe,
       # and a crawl worker thread reusing its session across every page it
-      # fetches is what makes the pooling pay off. Sessions idle-close
-      # themselves after keep-alive timeout, so nothing to reap.
+      # fetches is what keeps timeouts and retries configured once.
+      # Sessions idle-close themselves after keep-alive timeout, so nothing
+      # to reap.
       def self.session
         Thread.current[SESSION_KEY] ||= build_session
       end
 
       def self.build_session
-        # :persistent is what makes the pooling real — without it httpx
-        # opens a fresh connection per request. It loads fiber_concurrency
-        # and the retries plugin internally.
-        HTTPX.plugin(:persistent).with(
+        # Deliberately NOT :persistent: in httpx 1.8.1 that plugin wedges
+        # inside the selector loop when a session that already holds a
+        # pooled connection opens one to a NEW host — the operation
+        # timeout never fires and the fetch hangs forever (reproduced in
+        # plain Ruby: example.com then nytimes.com on one session).
+        # Without it httpx opens a fresh connection per host, which for a
+        # crawler hitting mostly-distinct hosts costs one TLS handshake
+        # per page and never hangs. Retries are explicit so the transient
+        # backoff that :persistent loaded internally is kept.
+        HTTPX.plugin(:retries).with(
           timeout: {
             connect_timeout: CONNECT_TIMEOUT,
             read_timeout: READ_TIMEOUT,

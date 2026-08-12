@@ -3,6 +3,7 @@
 require 'ferrum'
 require 'json'
 require 'net/http'
+require 'set'
 require 'uri'
 require_relative '../backend'
 require_relative '../content_filter'
@@ -80,6 +81,13 @@ module Ask
 
           attr_writer :challenge_timeout, :poll_interval
 
+          # Domains already given a warm pass this process — a failed warm
+          # (DataDome-class wall) is not re-paid at CHALLENGE_TIMEOUT on
+          # every fetch of that domain.
+          def warmed_domains
+            @warmed_domains ||= Set.new
+          end
+
           # A shared browser, built once and reused. Ferrum is loaded lazily
           # so consumers who never hit this backend pay nothing for it.
           def browser
@@ -153,21 +161,7 @@ module Ask
           raise FetchError, 'ferrum gem unavailable' unless self.class.browser
 
           page = self.class.browser.create_page
-          page.go_to(url)
-          wait_for_challenge(page)
-          wait_for_idle(page)
-
-          status = page.network.status
-          raise FetchError, "got #{status} at #{url}" if status && status >= 400
-
-          body = page.body
-          raise FetchError, "challenge page at #{url}" if challenge_page?(body)
-
-          result = Markdown.generate(body, base_url: url, filter: self.class.content_filter)
-          result[:outlinks] = outlink_urls(body, url)
-          raise EmptyContentError, "no readable content at #{url}" unless usable_content?(result[:content])
-
-          result
+          fetch_attempt(page, url)
         rescue Ferrum::TimeoutError, Ferrum::ProcessTimeoutError, Ferrum::DeadBrowserError => e
           raise TimeoutError, "#{e.class}: #{e.message}"
         rescue Ferrum::StatusError => e
@@ -178,6 +172,68 @@ module Ask
           raise TimeoutError, "browser connection #{e.class}: #{e.message}"
         ensure
           page&.close
+        end
+
+        # One fetch of +url+ on the page, with the warm-and-retry pass: a
+        # challenge page means this domain hasn't issued the profile a
+        # clearance cookie yet. Visiting the DOMAIN ROOT first (where a
+        # managed challenge auto-solves for a trusted browser) earns the
+        # cookie — pinned to this browser + IP and persisted in the
+        # profile — then the URL is retried once. Subsequent fetches for
+        # the same domain find the cookie and never warm again. Bounded:
+        # one warm per domain per process (warmed_domains), one retry per
+        # fetch — a still-challenged URL fails as before, never wedging
+        # the queue on a DataDome-class wall.
+        def fetch_attempt(page, url, warmed: false)
+          page.go_to(url)
+          wait_for_challenge(page)
+          wait_for_idle(page)
+
+          status = page.network.status
+          raise FetchError, "got #{status} at #{url}" if status && status >= 400
+
+          body = page.body
+          if challenge_page?(body)
+            raise FetchError, "challenge page at #{url}" if warmed
+            raise FetchError, "challenge page at #{url}" unless warm_domain(page, url)
+
+            return fetch_attempt(page, url, warmed: true)
+          end
+          # Browser renders the parked page a JS redirect lands on (the
+          # server shell hands /lander to JS) — Local never sees it. The
+          # shared parked-domain detector catches it here; the distinct
+          # ParkedDomainError lets the pipeline classify (never retry) it.
+          raise ParkedDomainError, "parked domain at #{url} — registrar parking page, not site content" if parked_domain?(body)
+
+          result = Markdown.generate(body, base_url: url, filter: self.class.content_filter)
+          result[:outlinks] = outlink_urls(body, url)
+          raise EmptyContentError, "no readable content at #{url}" unless usable_content?(result[:content])
+
+          result
+        end
+
+        # Earns the domain's clearance cookie: navigates to the domain
+        # root (the challenge JS runs there, not on the deep URL), waits
+        # for the managed challenge to auto-solve, and lets the cookie
+        # land in the profile. Returns true when the domain is now warm.
+        # Domains already attempted this process are skipped — a failed
+        # warm is not re-paid at CHALLENGE_TIMEOUT per fetch.
+        def warm_domain(page, url)
+          domain = URI(url).host
+          return false if self.class.warmed_domains.include?(domain)
+
+          self.class.warmed_domains << domain
+          page.go_to(domain_root(url))
+          wait_for_challenge(page)
+          wait_for_idle(page)
+          true
+        rescue Ferrum::Error, URI::InvalidURIError
+          false
+        end
+
+        def domain_root(url)
+          uri = URI(url)
+          "#{uri.scheme}://#{uri.host}"
         end
 
         private

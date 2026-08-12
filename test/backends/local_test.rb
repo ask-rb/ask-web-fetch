@@ -129,6 +129,76 @@ describe Ask::WebFetch::Backends::Local do
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
     end
 
+    it 'fails through when a JS-app shell renders only part of the page' do
+      # The reddit case: server HTML is a client-rendered app shell with
+      # SOME content (above the 40-char minimum, below the shell
+      # threshold) — a truncated page that would pass as success. It must
+      # signal the chain to prefer a rendering backend instead.
+      stub_http do |_, _|
+        http_response(200, '<html><body><div id="root"><p>First wave of posts only, before the client-side render fills in the rest of the feed with lazy-loaded content.</p></div>' \
+                      '<script src="/app.js"></script></body></html>')
+      end
+
+      err = _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
+      _(err.message).must_include 'JS-app shell'
+    end
+
+    it 'fails through on a large HTML page with almost no server-rendered text' do
+      # The airbnb case: no framework marker, but 100KB of server HTML
+      # yielding a few lines of visible text — a shell by size ratio.
+      shell = '<html><body>' + ('<div class="tracking"><script>window.data=[];</script></div>' * 400) +
+              '<p>Search results with a couple of visible lines that pass the minimum content check.</p>' \
+              '<div id="results"></div></body></html>'
+      _(shell.bytesize).must_be :>, Ask::WebFetch::Backends::Local::SHELL_HTML_BYTES
+      stub_http { |_, _| http_response(200, shell) }
+
+      err = _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::EmptyContentError
+      _(err.message).must_include 'JS-app shell'
+    end
+
+    it 'fails through on a GoDaddy parked-domain page' do
+      # A parked domain is an ad for buying the domain, not site content —
+      # a content company must never store it as the site.
+      stub_http do |_, _|
+        http_response(200, '<html><head><title>ayur.ai</title></head><body>' \
+                      '<p>ayur.ai is parked free, courtesy of GoDaddy.com.</p>' \
+                      '<a href="https://www.godaddy.com">Get This Domain</a></body></html>')
+      end
+
+      err = _(-> { @backend.fetch('https://ayur.ai') }).must_raise Ask::WebFetch::ParkedDomainError
+      _(err.message).must_include 'parked domain'
+    end
+
+    it 'accepts a real page that mentions domains' do
+      # Generic mentions of domains/parking on a real page must not trip
+      # the registrar-specific detector.
+      stub_http { |_, _| http_response(200, '<html><body><p>We help you find the right domain for your business and manage your DNS settings.</p></body></html>') }
+
+      page = @backend.fetch('https://example.com')
+
+      _(page[:content]).must_include 'find the right domain'
+    end
+
+    it 'accepts a JS-app page that is fully server-rendered' do
+      # A Next.js-style page whose server HTML carries the real content
+      # (above the shell threshold) is complete — no rendering backend
+      # needed, Local's output is the page.
+      long = '<html><body><div id="__next">' + ('<p>Full article paragraph with substantial real content that the server rendered ahead of time.</p>' * 120) + '</div></body></html>'
+      stub_http { |_, _| http_response(200, long) }
+
+      page = @backend.fetch('https://example.com')
+
+      _(page[:content]).must_include 'Full article paragraph'
+    end
+
+    it 'accepts a short page that is not a JS app' do
+      stub_http { |_, _| http_response(200, '<html><body><p>A short but complete status page with enough detail to be usable content for a reader.</p></body></html>') }
+
+      page = @backend.fetch('https://example.com')
+
+      _(page[:content]).must_include 'short but complete'
+    end
+
     it 'raises EmptyContentError for content below the minimum length' do
       stub_http { |_, _| http_response(200, '<html><body><p>tiny</p></body></html>') }
 
