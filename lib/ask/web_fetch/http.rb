@@ -18,12 +18,12 @@ module Ask
     # TLS) all surface as Ask::WebFetch::TimeoutError, the transient
     # bucket, whatever their underlying class.
     class Http
-      CONNECT_TIMEOUT = 5
-      READ_TIMEOUT = 15
-      WRITE_TIMEOUT = 15
-      # Whole-request cap. A page that can't be read in a minute is a
+      CONNECT_TIMEOUT = 3
+      READ_TIMEOUT = 8
+      WRITE_TIMEOUT = 8
+      # Whole-request cap. A page that can't be read in 20s is a
       # problem page, not a stall worth a crawl worker.
-      OPERATION_TIMEOUT = 60
+      OPERATION_TIMEOUT = 20
       # Retries per request, on top of the crawl ledger's own auto-heal
       # rounds. GETs are idempotent; a couple of cheap retries beat a full
       # ledger round-trip for transient flakiness.

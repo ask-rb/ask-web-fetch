@@ -45,7 +45,7 @@ module Ask
       class Browser < Backend
         # Seconds to let a Cloudflare-style challenge auto-solve before
         # giving up (tunable via Browser.challenge_timeout).
-        CHALLENGE_TIMEOUT = 30
+        CHALLENGE_TIMEOUT = 10
 
         # Seconds to wait for the network to go quiet after the page loads,
         # so lazy-loaded content is in before we read the DOM.

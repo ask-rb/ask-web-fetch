@@ -15,8 +15,8 @@ module Ask
       # pages that the Local backend cannot.
       class Jina < Backend
         BASE_URL = 'https://r.jina.ai'
-        OPEN_TIMEOUT = 5
-        READ_TIMEOUT = 30
+        OPEN_TIMEOUT = 3
+        READ_TIMEOUT = 10
 
         def fetch(url)
           uri = URI("#{BASE_URL}/#{url}")
