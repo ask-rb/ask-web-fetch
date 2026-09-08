@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    ask-web-fetch (0.7.2)
+    ask-web-fetch (0.7.3)
       ferrum (>= 0.14)
       httpx (>= 1.0)
       nokogiri (>= 1.15)
@@ -88,7 +88,7 @@ CHECKSUMS
   ask-core (0.11.2) sha256=8257539e05c7b50ff87f77b01012f75575c65cc183d1ea69d8dca14f87d6890e
   ask-schema (0.1.1) sha256=1be1c107c2f7cdacde9cf8d4dfc004e586f652c2b979e1829fab748f66ca98bd
   ask-tools (0.6.0) sha256=26a4c25a2367f49d7541b29ffc65d4efaaacec0133ea502c5aa3092f86d0966e
-  ask-web-fetch (0.7.2)
+  ask-web-fetch (0.7.3)
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   bigdecimal (4.1.2) sha256=53d217666027eab4280346fba98e7d5b66baaae1b9c3c1c0ffe89d48188a3fbd
   bundler (4.0.12) sha256=7f8b757d28dfb636e7b24fba2344ac6dd13b5b24f4b46d62573d483f211825ac
