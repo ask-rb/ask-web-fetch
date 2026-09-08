@@ -49,12 +49,14 @@ module Ask
 
             { title: nil, description: nil, content: content, outlinks: markdown_outlinks(body, url) }
           when '429'
-            raise ServerError, 'rate limited by Jina (429)'
+            raise ServerError.new('rate limited by Jina', status: 429)
           when '401', '403'
-            raise FetchError, "Jina access error (#{res.code})"
+            raise FetchError.new("Jina access error", status: res.code.to_i)
           else
             # 5xx = Jina-side blip (transient); other 4xx = the URL is dead.
-            raise(res.code.to_i >= 500 ? ServerError : FetchError, "Jina returned #{res.code}")
+            code = res.code.to_i
+            error_class = code == 404 ? NotFoundError : (code >= 500 ? ServerError : FetchError)
+            raise error_class.new("Jina returned #{res.code}", status: code)
           end
         rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED,
                Errno::ECONNRESET, SocketError, URI::InvalidURIError => e

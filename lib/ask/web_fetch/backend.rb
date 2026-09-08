@@ -8,10 +8,23 @@ module Ask
     # next backend in the chain.
     class Error < StandardError; end
 
-    # A backend that failed to fetch because the URL itself is bad — 4xx,
+    # A backend that failed to fetch because the URL itself is bad —
     # challenge page, non-HTML response, redirect loop. Deterministic:
     # retrying won't change the outcome.
-    class FetchError < Error; end
+    class FetchError < Error
+      attr_reader :status
+
+      def initialize(message = nil, status: nil)
+        @status = status
+        msg = status ? "[#{status}] #{message}" : message
+        super(msg)
+      end
+    end
+
+    # HTTP 404 — the URL does not exist. Some 404 pages still carry
+    # usable content (custom error pages with navigation, suggestions);
+    # the backend tries to extract it before giving up.
+    class NotFoundError < FetchError; end
 
     # A backend that fetched the page but found nothing usable in it.
     class EmptyContentError < Error; end
@@ -29,7 +42,15 @@ module Ask
 
     # The service or the target server answered 5xx/429. Transient:
     # retrying after backoff may succeed.
-    class ServerError < Error; end
+    class ServerError < Error
+      attr_reader :status
+
+      def initialize(message = nil, status: nil)
+        @status = status
+        msg = status ? "[#{status}] #{message}" : message
+        super(msg)
+      end
+    end
 
     # Base class for fetch backends, plus the errors they raise.
     #

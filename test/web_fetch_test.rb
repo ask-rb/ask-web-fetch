@@ -125,7 +125,7 @@ describe Ask::WebFetch do
       error = assert_raises(Ask::WebFetch::Error) { Ask::WebFetch.fetch('https://example.com') }
 
       _(error.message).must_match(/Local: got 500/)
-      _(error.message).must_match(/Jina: rate limited/)
+      _(error.message).must_match(/Jina: \[429\]/)
     end
 
     it 'supports a custom backend injected via backends=' do
@@ -295,8 +295,19 @@ describe Ask::WebFetch do
 
       error = assert_raises(Ask::WebFetch::Error) { Ask::WebFetch.fetch('https://example.com') }
 
-      _(error.message).must_match(/Local: got 404/)
-      _(error.message).must_match(/Jina: Jina returned 404/)
+      # When all backends report the same HTTP status, the message is concise
+      _(error.message).must_include('[404]')
+      _(error.message).must_include('https://example.com')
+    end
+
+    it 'lists each backend when they disagree on the error' do
+      stub_local { |_, _| http_response(500, 'boom') }
+      stub_jina(status: 404, body: 'nope')
+
+      error = assert_raises(Ask::WebFetch::Error) { Ask::WebFetch.fetch('https://example.com') }
+
+      _(error.message).must_match(/Local: got 500/)
+      _(error.message).must_match(/Jina: \[404\]/)
     end
   end
 end

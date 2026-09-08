@@ -206,7 +206,10 @@ module Ask
           wait_for_idle(page)
 
           status = page.network.status
-          raise FetchError, "got #{status} at #{url}" if status && status >= 400
+          if status && status >= 400
+            error_class = status == 404 ? NotFoundError : FetchError
+            raise error_class.new("got #{status} at #{url}", status: status)
+          end
 
           body = page.body
           if challenge_page?(body)

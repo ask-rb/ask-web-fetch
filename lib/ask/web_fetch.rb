@@ -37,7 +37,7 @@ module Ask
     # re-raises as FetchError so callers can fail fast; any transient
     # failure in the mix (timeout, 5xx, empty render) keeps the base
     # Error, which recovers on retry.
-    DETERMINISTIC = [Ask::WebFetch::FetchError, Ask::WebFetch::EmptyContentError].freeze
+    DETERMINISTIC = [Ask::WebFetch::FetchError, Ask::WebFetch::NotFoundError, Ask::WebFetch::EmptyContentError].freeze
 
     # Backend chain, tried in order. Crawl4AI leads when configured
     # (CRAWL4AI_URL), so a present self-hosted renderer is preferred;
@@ -83,8 +83,17 @@ module Ask
     # ParkedDomainError / EmptyContentError / FetchError are terminal —
     # retrying never changes the answer; Error may recover on retry.
     def self.collapse(failures, url)
-      detail = failures.map { |backend, e| "#{backend.backend_name}: #{e.message}" }.join('; ')
-      message = "all web fetch backends failed for #{url} (#{detail})"
+      # When all backends agree on the same root cause (same HTTP status),
+      # say so cleanly instead of listing every backend's echo of the same
+      # problem. Status is now on the error object itself (FetchError#status,
+      # NotFoundError#status), so we don't parse messages.
+      statuses = failures.filter_map { |_, e| e.respond_to?(:status) && e.status }
+      detail = if statuses.uniq.size == 1 && statuses.size == failures.size
+                 "[#{statuses.first}]"
+               else
+                 failures.map { |backend, e| "#{backend.backend_name}: #{e.message}" }.join('; ')
+               end
+      message = "#{detail} #{url}"
 
       classes = failures.map { |_, e| e.class }
       if classes.any? { |k| k <= Ask::WebFetch::ParkedDomainError }
@@ -92,6 +101,9 @@ module Ask
       end
       if classes.any? { |k| k <= Ask::WebFetch::EmptyContentError }
         raise Ask::WebFetch::EmptyContentError, message
+      end
+      if classes.any? { |k| k == Ask::WebFetch::NotFoundError }
+        raise Ask::WebFetch::NotFoundError, message
       end
 
       deterministic = failures.all? { |_, e| DETERMINISTIC.any? { |klass| e.is_a?(klass) } }

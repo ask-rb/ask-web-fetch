@@ -65,12 +65,15 @@ module Ask
           end
 
           # Probe 3: full HTML scrape (legacy path)
-          body, content_type, redirect = fetch_html(url)
-          raise FetchError, "expected HTML from #{url}, got #{content_type}" unless content_type.include?('html')
-          raise FetchError, "challenge page at #{url}" if challenge_page?(body)
+          body, content_type, redirect, status = fetch_html(url)
+          unless content_type.include?('html')
+            raise FetchError.new("expected HTML from #{url}, got #{content_type}", status: status)
+          end
+          raise FetchError.new("challenge page at #{url}", status: status) if challenge_page?(body)
 
           page = to_markdown(body, url)
           page[:redirected] = redirect
+          page[:status] = status
           # Parked-domain pages are not content: the domain owner parked it
           # with a registrar and the page is an ad for buying the domain
           # (GoDaddy/Namecheap/Sedo parking). A content company must never
@@ -79,6 +82,14 @@ module Ask
           # server-rendered — the HTML-only markers live in scripts and
           # assets), then the content minimum, then the JS-shell
           # completeness signal below.
+          # 404 pages sometimes carry usable content (custom error pages
+          # with navigation, suggestions). Try to extract it before giving
+          # up — only raise NotFoundError if the content is genuinely empty.
+          if status == 404
+            return page if usable_content?(page[:content])
+            raise NotFoundError.new("not found at #{url}", status: 404)
+          end
+
           guard_page!(url, page[:content], raw_body: body)
           # The completeness signal: a JS-app shell whose server HTML
           # renders little is a TRUNCATED page, not a complete one — the
@@ -183,8 +194,8 @@ module Ask
         end
 
         # GET with redirect following (max MAX_REDIRECTS hops). Returns
-        # [body, content_type, redirect] where redirect is nil when the
-        # URL answered directly, else {status: first hop's status,
+        # [body, content_type, redirect, status] where redirect is nil
+        # when the URL answered directly, else {status: first hop's status,
         # url: final destination} — the chain the crawler followed.
         def fetch_html(url)
           uri = URI(url)
@@ -192,7 +203,9 @@ module Ask
           first_hop_status = nil
           loop do
             response = self.class.http.get(uri.to_s, headers: { 'accept' => 'text/html,application/xhtml+xml' })
-            return [response.body, response.content_type, redirect_info(first_hop_status, uri)] if (200..299).cover?(response.status)
+            if (200..299).cover?(response.status)
+              return [response.body, response.content_type, redirect_info(first_hop_status, uri), response.status]
+            end
 
             unless (300..399).cover?(response.status) && !response.location.empty?
               # 4xx (other than 429) = the URL is dead; 429/5xx = transient.
