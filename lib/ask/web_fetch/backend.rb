@@ -6,7 +6,14 @@ module Ask
   module WebFetch
     # Raised by backends on any failure; the tool catches it and tries the
     # next backend in the chain.
-    class Error < StandardError; end
+    class Error < StandardError
+      attr_reader :hint
+
+      def initialize(message = nil, hint: nil)
+        @hint = hint
+        super(message)
+      end
+    end
 
     # A backend that failed to fetch because the URL itself is bad —
     # challenge page, non-HTML response, redirect loop. Deterministic:
@@ -14,17 +21,21 @@ module Ask
     class FetchError < Error
       attr_reader :status
 
-      def initialize(message = nil, status: nil)
+      def initialize(message = nil, status: nil, hint: nil)
         @status = status
         msg = status ? "[#{status}] #{message}" : message
-        super(msg)
+        super(msg, hint: hint)
       end
     end
 
     # HTTP 404 — the URL does not exist. Some 404 pages still carry
     # usable content (custom error pages with navigation, suggestions);
     # the backend tries to extract it before giving up.
-    class NotFoundError < FetchError; end
+    class NotFoundError < FetchError
+      def initialize(message = nil, status: 404, hint: nil)
+        super(message, status: status, hint: hint)
+      end
+    end
 
     # A backend that fetched the page but found nothing usable in it.
     class EmptyContentError < Error; end
@@ -38,17 +49,21 @@ module Ask
 
     # Network-level failure — timeout, connection refused/reset, bad
     # socket. Transient: the same URL may succeed on retry.
-    class TimeoutError < Error; end
+    class TimeoutError < Error
+      def initialize(message = nil, hint: nil)
+        super(message, hint: hint)
+      end
+    end
 
     # The service or the target server answered 5xx/429. Transient:
     # retrying after backoff may succeed.
     class ServerError < Error
       attr_reader :status
 
-      def initialize(message = nil, status: nil)
+      def initialize(message = nil, status: nil, hint: nil)
         @status = status
         msg = status ? "[#{status}] #{message}" : message
-        super(msg)
+        super(msg, hint: hint)
       end
     end
 

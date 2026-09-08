@@ -95,19 +95,25 @@ module Ask
                end
       message = "#{detail} #{url}"
 
+      # Attach the most informative hint — prefer the first backend's hint
+      # when all agree, otherwise use the first non-nil hint.
+      hints = failures.filter_map { |_, e| e.respond_to?(:hint) && e.hint }
+      hint = hints.uniq.size == 1 ? hints.first : hints.first
+
       classes = failures.map { |_, e| e.class }
       if classes.any? { |k| k <= Ask::WebFetch::ParkedDomainError }
-        raise Ask::WebFetch::ParkedDomainError, message
+        raise Ask::WebFetch::ParkedDomainError.new(message, hint: hint)
       end
       if classes.any? { |k| k <= Ask::WebFetch::EmptyContentError }
-        raise Ask::WebFetch::EmptyContentError, message
+        raise Ask::WebFetch::EmptyContentError.new(message, hint: hint)
       end
       if classes.any? { |k| k == Ask::WebFetch::NotFoundError }
-        raise Ask::WebFetch::NotFoundError, message
+        raise Ask::WebFetch::NotFoundError.new(message, hint: hint)
       end
 
       deterministic = failures.all? { |_, e| DETERMINISTIC.any? { |klass| e.is_a?(klass) } }
-      raise(deterministic ? Ask::WebFetch::FetchError : Ask::WebFetch::Error, message)
+      error_class = deterministic ? Ask::WebFetch::FetchError : Ask::WebFetch::Error
+      raise error_class.new(message, hint: hint)
     end
 
     # Fetches +url+ and returns LLM-ready markdown — "# Title\n\nSource:

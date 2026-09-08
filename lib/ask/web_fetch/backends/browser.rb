@@ -179,13 +179,17 @@ module Ask
           page = self.class.browser.create_page
           fetch_attempt(page, url)
         rescue Ferrum::TimeoutError, Ferrum::ProcessTimeoutError => e
-          raise TimeoutError, "#{e.class}: #{e.message}"
+          raise TimeoutError.new("#{e.class}: #{e.message}",
+                                 hint: "page load timed out — site may be slow or blocking automation")
         rescue Ferrum::StatusError => e
-          raise FetchError, "browser could not load #{url}: #{e.message}"
+          raise FetchError.new("browser could not load #{url}: #{e.message}",
+                               hint: "navigation failed — URL may be invalid or unreachable")
         rescue Ferrum::Error => e
-          raise ServerError, "browser #{e.class}: #{e.message}"
+          raise ServerError.new("browser #{e.class}: #{e.message}",
+                                hint: "browser error — check Chrome/CDP connection")
         rescue Errno::ECONNREFUSED, SocketError => e
-          raise TimeoutError, "browser connection #{e.class}: #{e.message}"
+          raise TimeoutError.new("browser connection #{e.class}: #{e.message}",
+                                 hint: "CDP endpoint unreachable — is Chrome running with --remote-debugging-port?")
         ensure
           page&.close
         end

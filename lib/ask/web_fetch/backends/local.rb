@@ -67,9 +67,11 @@ module Ask
           # Probe 3: full HTML scrape (legacy path)
           body, content_type, redirect, status = fetch_html(url)
           unless content_type.include?('html')
-            raise FetchError.new("expected HTML from #{url}, got #{content_type}", status: status)
+            raise FetchError.new("expected HTML from #{url}, got #{content_type}", status: status,
+                                 hint: "server returned #{content_type} instead of HTML")
           end
-          raise FetchError.new("challenge page at #{url}", status: status) if challenge_page?(body)
+          raise FetchError.new("challenge page at #{url}", status: status,
+                               hint: "anti-bot challenge detected — try with CDP-attached browser") if challenge_page?(body)
 
           page = to_markdown(body, url)
           page[:redirected] = redirect
@@ -87,7 +89,7 @@ module Ask
           # up — only raise NotFoundError if the content is genuinely empty.
           if status == 404
             return page if usable_content?(page[:content])
-            raise NotFoundError.new("not found at #{url}", status: 404)
+            raise NotFoundError.new("not found at #{url}", hint: "page does not exist")
           end
 
           guard_page!(url, page[:content], raw_body: body)
