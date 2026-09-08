@@ -38,7 +38,33 @@ module Ask
           end
         end
 
+        # Agent-first content negotiation: many sites now serve clean
+        # markdown when asked via Accept: text/markdown, a .md URL twin,
+        # or an /llms.txt manifest. We probe these low-cost paths before
+        # falling back to full HTML scrape + DOM conversion.
+        #
+        # Order: (1) Accept: text/markdown on the original URL — the
+        # cheapest probe, one extra GET; (2) the .md twin — Mintlify-
+        # style sites redirect .md with content-type text/plain; (3) the
+        # full HTML scrape. llms.txt manifests are upstream of individual
+        # pages (they index the site) and are tried by the MCP tool
+        # layer, not per-URL — that avoids duplicate fetches when the
+        # same manifest covers multiple URLs.
         def fetch(url)
+          # Probe 1: server content negotiation
+          md_body, md_ct, md_redirect = fetch_markdown(url)
+          if md_body && !md_body.empty?
+            return assemble_page(md_body, url, md_redirect, source: :accept_header)
+          end
+
+          # Probe 2: .md URL twin (Mintlify, Docusaurus, some Hugo sites)
+          twin = "#{url.chomp('/')}.md"
+          md_body, md_ct, md_redirect = fetch_markdown(twin)
+          if md_body && !md_body.empty?
+            return assemble_page(md_body, url, md_redirect, source: :md_twin, twin_url: twin)
+          end
+
+          # Probe 3: full HTML scrape (legacy path)
           body, content_type, redirect = fetch_html(url)
           raise FetchError, "expected HTML from #{url}, got #{content_type}" unless content_type.include?('html')
           raise FetchError, "challenge page at #{url}" if challenge_page?(body)
@@ -63,7 +89,7 @@ module Ask
           # and keeps a partial page from ever being stored as the real
           # thing. Two detectors: known framework markers, or a large
           # HTML page with almost no server-rendered text.
-          if js_app_shell?(body) && page[:content].length < SHELL_CONTENT_THRESHOLD
+          if js_app_shell?(body) && page[:content].length < SHELL_DEFER_THRESHOLD
             raise EmptyContentError,
               "JS-app shell at #{url} — server HTML renders only #{page[:content].length} chars; a rendering backend is required"
           end
@@ -82,10 +108,19 @@ module Ask
         # specific footprints of React/Vue/Next/Nuxt app shells.
         JS_APP_SHELL_MARKERS = /id=["'](?:root|app|__next|site-content)["']|__NEXT_DATA__|window\.__NUXT__|ng-app|data-reactroot/
 
-        # Markdown below this from a JS-app shell is "server sent a shell",
-        # not "page is genuinely short" — a real page (even a short one)
-        # is usually server-rendered above this. Tunable; the chain turns
-        # the signal into "prefer Browser for this URL".
+        # A framework marker (React/Vue/Next) alone is NOT emptiness: a
+        # marked page can server-render real content (careers.abb job
+        # pages: 2,162 chars of job description) and must be stored as-is
+        # when the rendering backends cannot do better — dropping it lost
+        # real pages (2026-08-14). The shell deferral fires only when the
+        # extraction is genuinely little: below this, the page is a true
+        # shell (airbnb: 613KB HTML -> 143 chars). Tunable; the chain
+        # turns the signal into "prefer Browser for this URL".
+        SHELL_DEFER_THRESHOLD = 500
+
+        # The ratio detector's own bar, kept for compatibility with the
+        # comment below (large HTML + near-empty text is a shell whatever
+        # the framework).
         SHELL_CONTENT_THRESHOLD = 4_000
 
         # A page whose server HTML is large but yields almost no text is a
@@ -173,6 +208,60 @@ module Ask
 
         def redirect_info(status, uri)
           status && { status: status, url: uri.to_s }
+        end
+
+        # Probes +url+ with Accept: text/markdown. Returns
+        # [body, content_type, redirect] on a text/markdown response, or
+        # nils when the server returned HTML (or anything else the caller
+        # shouldn't treat as agent-native). Follows one redirect hop —
+        # enough for Mintlify's 307 → .md twin.
+        def fetch_markdown(url)
+          uri = URI(url)
+          response = self.class.http.get(
+            uri.to_s,
+            headers: { 'accept' => 'text/markdown' }
+          )
+          return [nil, nil, nil] unless response
+          return [nil, nil, nil] if response.status >= 400
+
+          redirect_info = nil
+
+          # Follow a single redirect (Mintlify 307 → .md twin)
+          if (300..399).cover?(response.status) && !response.location.empty?
+            redirect_uri = URI.join(uri, response.location)
+            redirect_info = { status: response.status, url: redirect_uri.to_s }
+            response = self.class.http.get(
+              redirect_uri.to_s,
+              headers: { 'accept' => 'text/markdown' }
+            )
+            return [nil, nil, nil] unless response && response.status == 200
+          end
+
+          ct = response.content_type.to_s.downcase
+          return [nil, nil, nil] unless ct.include?('text/markdown') && response.status == 200
+
+          [response.body, ct, redirect_info]
+        rescue StandardError
+          [nil, nil, nil]
+        end
+
+        # Assembles a page hash from agent-native markdown (Accept or .md
+        # twin), skipping the HTML→markdown conversion pipeline. Runs the
+        # shared guards (parked domain, minimum content) so downstream
+        # behavior is identical regardless of source.
+        def assemble_page(markdown, url, redirect, source:, twin_url: nil)
+          source_url = twin_url || url
+          page = {
+            title: nil,
+            description: nil,
+            content: Markdown.clean(markdown),
+            redirected: redirect,
+            licenses: [],
+            outlinks: markdown_outlinks(markdown, source_url)
+          }
+          guard_page!(url, page[:content])
+
+          page
         end
       end
     end

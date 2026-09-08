@@ -96,6 +96,12 @@ module Ask
             browser_mutex.synchronize { @browser ||= build_browser }
           end
 
+          # Drops the shared browser so the next use builds a fresh
+          # session — called when the current one died mid-fetch.
+          def reset_browser
+            browser_mutex.synchronize { @browser = nil }
+          end
+
           def content_filter
             @content_filter ||= ContentFilter.default
           end
@@ -162,7 +168,17 @@ module Ask
 
           page = self.class.browser.create_page
           fetch_attempt(page, url)
-        rescue Ferrum::TimeoutError, Ferrum::ProcessTimeoutError, Ferrum::DeadBrowserError => e
+        rescue Ferrum::DeadBrowserError => e
+          # The shared browser died mid-fetch (the browserless server
+          # killed the session's browser). A dead browser is transient —
+          # the next session starts a fresh one — so reconnect and retry
+          # ONCE instead of failing the page (observed 2026-08-14: the
+          # server's session limits killed browsers and pages were
+          # silently dropped).
+          self.class.reset_browser
+          page = self.class.browser.create_page
+          fetch_attempt(page, url)
+        rescue Ferrum::TimeoutError, Ferrum::ProcessTimeoutError => e
           raise TimeoutError, "#{e.class}: #{e.message}"
         rescue Ferrum::StatusError => e
           raise FetchError, "browser could not load #{url}: #{e.message}"

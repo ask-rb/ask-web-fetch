@@ -233,6 +233,98 @@ describe Ask::WebFetch::Backends::Local do
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::FetchError
     end
 
+    describe 'agent-native content negotiation' do
+      it 'returns server-provided markdown when Accept: text/markdown is honored' do
+        stub_http do |url, headers|
+          if headers['accept']&.include?('text/markdown')
+            http_response(200, "# Direct markdown\n\nServer speaks markdown natively.",
+                          content_type: 'text/markdown; charset=utf-8')
+          else
+            http_response(200, '<html><head><title>should not be used</title></head><body><p>fallback</p></body></html>')
+          end
+        end
+
+        page = @backend.fetch('https://example.com')
+
+        _(page[:content]).must_include 'Direct markdown'
+        _(page[:content]).must_include 'Server speaks markdown natively'
+      end
+
+      it 'falls through to HTML scrape when server returns text/html for Accept: text/markdown' do
+        stub_http do |url, headers|
+          if headers['accept']&.include?('text/markdown')
+            http_response(200, '<html><head><title>ignored</title></head><body>nope</body></html>',
+                          content_type: 'text/html; charset=utf-8')
+          else
+            http_response(200, '<html><head><title>Real Title</title></head><body>' \
+                          "<p>#{'Real article content above the minimum threshold. ' * 5}</p></body></html>")
+          end
+        end
+
+        page = @backend.fetch('https://example.com')
+
+        _(page[:title]).must_equal 'Real Title'
+        _(page[:content]).must_include 'Real article content'
+      end
+
+      it 'follows a Mintlify-style 307 redirect to .md twin' do
+        stub_http do |url, headers|
+          if headers['accept']&.include?('text/markdown')
+            if url == 'https://example.com/guide'
+              http_response(307, '', location: 'https://example.com/guide.md',
+                            content_type: 'text/plain')
+            elsif url == 'https://example.com/guide.md'
+              http_response(200, "# Guide\n\nThis is the full markdown content of the guide page, provided by the server as clean markdown for agent consumption.",
+                            content_type: 'text/markdown; charset=utf-8')
+            else
+              http_response(200, '', content_type: 'text/html')
+            end
+          else
+            http_response(200, '<html><head><title>HTML fallback</title></head><body>' \
+                          "<p>#{'Real content for the HTML fallback path. ' * 5}</p></body></html>")
+          end
+        end
+
+        page = @backend.fetch('https://example.com/guide')
+
+        _(page[:content]).must_include 'Guide'
+        _(page[:content]).must_include 'full markdown content of the guide page'
+        _(page[:redirected]).must_equal(status: 307, url: 'https://example.com/guide.md')
+      end
+
+      it 'does not treat text/plain as agent-native markdown' do
+        stub_http do |url, headers|
+          if headers['accept']&.include?('text/markdown')
+            http_response(200, 'some plain text', content_type: 'text/plain; charset=utf-8')
+          else
+            http_response(200, '<html><head><title>HTML</title></head><body>' \
+                          "<p>#{'Real article content above the minimum threshold. ' * 5}</p></body></html>")
+          end
+        end
+
+        page = @backend.fetch('https://example.com')
+
+        _(page[:title]).must_equal 'HTML'
+        _(page[:content]).must_include 'Real article content'
+      end
+
+      it 'does not treat application/pdf as agent-native' do
+        stub_http do |url, headers|
+          if headers['accept']&.include?('text/markdown')
+            http_response(200, '%PDF-1.4 binary garbage', content_type: 'application/pdf')
+          else
+            http_response(200, '<html><head><title>PDF Page</title></head><body>' \
+                          "<p>#{'Real article content above the minimum threshold. ' * 5}</p></body></html>")
+          end
+        end
+
+        page = @backend.fetch('https://example.com')
+
+        _(page[:title]).must_equal 'PDF Page'
+        _(page[:content]).must_include 'Real article content'
+      end
+    end
+
     it 'exposes the redirect chain it followed' do
       stub_http do |url, _|
         case url

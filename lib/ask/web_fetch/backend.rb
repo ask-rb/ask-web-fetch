@@ -66,7 +66,14 @@ module Ask
       # challenge/interstitial pages carry these markers, while legitimate
       # pages can contain the word "captcha" in unrelated config/JS (e.g.
       # Wikipedia embeds an hcaptcha edit-config flag on every page).
-      CHALLENGE_RE = /just a moment|checking your browser|cf-chl/i
+      # Cf-chl: a Turnstile form widget uses `cf-chl-widget-*` + `cf-turnstile-response`
+      # (a per-form CAPTCHA, not the `cf-chl` managed challenge that gates
+      # the whole page), so matching bare `cf-chl` on the body misclassifies
+      # every Turnstile form (openai.com/form/codex-for-oss) as a challenge.
+      # Accept both the classic managed-challenge markers (`challenge-platform`,
+      # `_cf_chl_opt`) and the bare `cf-chl` id, but the plain widget id is
+      # explicitly NOT a challenge — see challenge_page? below.
+      CHALLENGE_RE = /just a moment|checking your browser|cf-chl|challenge-platform|_cf_chl_opt/i
 
       # Registrar parking-page markers: the page is an ad for a parked
       # (for-sale) domain, not the site's content. A content company must
@@ -159,7 +166,17 @@ module Ask
       private
 
       def challenge_page?(body)
-        body.to_s.match?(CHALLENGE_RE)
+        text = body.to_s
+        return false unless text.match?(CHALLENGE_RE)
+        # Bare `cf-chl-widget-*` is a Turnstile form widget, not the
+        # Cloudflare managed challenge interstitial. The interstitial's
+        # `cf-chl` comes with `challenge-platform` / `_cf_chl_opt` /
+        # "just a moment" next to it; a page whose only hit is the widget
+        # id (openai.com form pages) is NOT a challenge.
+        return false if text.include?('cf-chl-widget') &&
+                        !text.match?(/challenge-platform|_cf_chl_opt|just a moment|checking your browser/i)
+
+        true
       end
 
       def parked_domain?(body)

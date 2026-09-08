@@ -95,6 +95,37 @@ describe Ask::WebFetch::Backends::Browser do
     Ask::WebFetch::Backends::Browser.challenge_timeout = nil
   end
 
+  describe 'dead browser recovery' do
+    it 'reconnects and retries once when the shared browser dies' do
+      page = FakePage.new(html: article_html)
+      live = FakeBrowser.new([page])
+      dead_once = Class.new do
+        def initialize(live_browser)
+          @live = live_browser
+          @died = false
+        end
+
+        def create_page
+          unless @died
+            @died = true
+            raise Ferrum::DeadBrowserError, 'browser is dead'
+          end
+
+          @live.create_page
+        end
+      end
+
+      Ask::WebFetch::Backends::Browser.browser = dead_once.new(live)
+      Ask::WebFetch::Backends::Browser.stub(:build_browser, live) do
+        result = Ask::WebFetch::Backends::Browser.new.fetch('https://example.com')
+
+        _(result[:content]).must_include 'Real article content'
+      end
+    ensure
+      Ask::WebFetch::Backends::Browser.browser = nil
+    end
+  end
+
   describe 'configuration' do
     it 'is configured when a browser path is set' do
       _(Ask::WebFetch::Backends::Browser.configured?).must_equal true
