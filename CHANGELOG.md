@@ -1,3 +1,38 @@
+## [0.7.5] — 2026-09-09
+
+### Added
+
+- **Structured error classes with HTTP status.** `FetchError` and
+  `ServerError` now carry an `#status` attribute (the HTTP status code
+  when the server returned one). `NotFoundError` is a new subclass of
+  `FetchError` for 404 responses — distinct from generic fetch failures
+  so callers can handle "page doesn't exist" separately.
+- **404 pages with content are served.** Custom error pages that carry
+  usable content (navigation, search suggestions, related links) are now
+  returned instead of raising immediately. Only genuinely empty 404 pages
+  raise `NotFoundError`.
+- **Cleaner collapse messages.** When all backends report the same HTTP
+  status, the error message shows `[status] url` instead of listing
+  every backend's echo of the same problem.
+- **Agent-native content negotiation.** The Local backend probes with
+  `Accept: text/markdown` before scraping HTML, and tries the `.md`
+  URL twin (Mintlify/Docusaurus pattern) as a second probe. Sites that
+  speak markdown natively get clean content without DOM conversion.
+- **Turnstile false-positive fix.** `cf-chl-widget` (Turnstile form
+  widget) is no longer misclassified as the Cloudflare managed challenge
+  interstitial. `challenge-platform` and `_cf_chl_opt` are now detected
+  for better interstitial coverage.
+- **Dead browser recovery.** `Browser.reset_browser` clears the shared
+  browser instance on `Ferrum::DeadBrowserError`, and `fetch` retries
+  once instead of failing.
+
+### Changed
+
+- `CHALLENGE_RE` expanded to include `challenge-platform` and
+  `_cf_chl_opt` for better Cloudflare interstitial detection.
+- `SHELL_DEFER_THRESHOLD` added for JS-app shell detection (previously
+  used `SHELL_CONTENT_THRESHOLD` which was too aggressive).
+
 ## [0.7.1] — 2026-08-12
 
 ### Added

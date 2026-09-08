@@ -208,8 +208,14 @@ module Ask
             end
 
             unless (300..399).cover?(response.status) && !response.location.empty?
-              # 4xx (other than 429) = the URL is dead; 429/5xx = transient.
               code = response.status
+              # 404: return the body so fetch() can try to extract content
+              # from custom error pages (some 404 pages carry navigation,
+              # search suggestions, or useful content).
+              if code == 404
+                return [response.body, response.content_type, redirect_info(first_hop_status, uri), code]
+              end
+              # 429/5xx = transient; other 4xx = the URL is dead.
               raise(code == 429 || code >= 500 ? ServerError : FetchError, "got #{code} from #{url}")
             end
             raise FetchError, "hit a redirect loop at #{url}" if (hops += 1) > MAX_REDIRECTS

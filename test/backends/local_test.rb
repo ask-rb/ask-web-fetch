@@ -391,11 +391,11 @@ describe Ask::WebFetch::Backends::Local do
       _(-> { @backend.fetch('https://example.com') }).must_raise Ask::WebFetch::TimeoutError
     end
 
-    it 'raises FetchError for a dead URL (404)' do
+    it 'raises NotFoundError for a dead URL (404)' do
       stub_http { |_, _| http_response(404, 'nope') }
 
-      err = _(-> { @backend.fetch('https://example.com/missing') }).must_raise Ask::WebFetch::FetchError
-      _(err.message).must_include 'got 404 from'
+      err = _(-> { @backend.fetch('https://example.com/missing') }).must_raise Ask::WebFetch::NotFoundError
+      _(err.message).must_include '[404]'
     end
 
     it 'raises ServerError for a 429 or 5xx' do
