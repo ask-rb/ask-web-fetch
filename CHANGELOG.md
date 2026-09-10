@@ -1,3 +1,17 @@
+## [0.8.0] — 2026-09-10
+
+### Added
+
+- **Brave browser support.** The Browser backend now prefers Brave over
+  Chrome/Chromium when present — Brave's fingerprinting resistance
+  (canvas, WebGL, audio randomization) makes it harder for Cloudflare/
+  DataDome to flag automation. Configure with `ASK_WEB_FETCH_BROWSER_PATH`
+  (any Chromium-based browser) or the legacy `ASK_WEB_FETCH_CHROME_PATH`.
+- **Random viewport per fetch.** Each browser launch gets a fresh random
+  window size (FHD to 2K) — a fixed window size is a fingerprinting
+  signal. Override with `Browser.viewport = { width:, height: }` for tests.
+- **`Browser.brave?`** — true when the configured binary is Brave.
+
 ## [0.7.5] — 2026-09-09
 
 ### Added

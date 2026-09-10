@@ -54,6 +54,16 @@ module Ask
         # How often to poll for the challenge to clear.
         POLL_INTERVAL = 0.5
 
+        # Brave paths first — Brave's fingerprinting resistance (canvas,
+        # WebGL, audio randomization) makes it harder for Cloudflare/
+        # DataDome to flag automation than stock Chrome/Chromium.
+        BRAVE_PATHS = [
+          '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+          '/usr/bin/brave-browser',
+          '/usr/bin/brave-browser-stable',
+          '/opt/brave.com/brave/brave-browser'
+        ].freeze
+
         DEFAULT_PATHS = [
           '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
           '/Applications/Chromium.app/Contents/MacOS/Chromium',
@@ -64,6 +74,11 @@ module Ask
           '/opt/google/chrome/chrome'
         ].freeze
 
+        # Random viewport dimensions (FHD to 2K) — a fixed window size is
+        # a fingerprinting signal. Each fetch gets a fresh random size.
+        VIEWPORT_WIDTH_RANGE = (1920..2560).freeze
+        VIEWPORT_HEIGHT_RANGE = (1080..1440).freeze
+
         class << self
           # The shared browser (or a test double). Reuse keeps the solved
           # challenge cookie warm across fetches within one process.
@@ -72,14 +87,17 @@ module Ask
           # The ContentFilter applied to every page by default.
           attr_writer :content_filter
 
-          # Absolute path to a Chrome/Chromium binary; nil when not found.
+          # Absolute path to a Chrome/Chromium/Brave binary; nil when not found.
+          # Prefers Brave (fingerprinting resistance) over Chrome/Chromium.
+          # Override with ASK_WEB_FETCH_BROWSER_PATH (any Chromium-based
+          # browser) or the legacy ASK_WEB_FETCH_CHROME_PATH.
           attr_writer :path
 
-          # CDP endpoint of an already-running Chrome ("http://host:port",
+          # CDP endpoint of an already-running browser ("http://host:port",
           # "…/json/version", or a ws:// browser URL) to attach to instead.
           attr_writer :cdp_url
 
-          attr_writer :challenge_timeout, :poll_interval
+          attr_writer :challenge_timeout, :poll_interval, :viewport
 
           # Domains already given a warm pass this process — a failed warm
           # (DataDome-class wall) is not re-paid at CHALLENGE_TIMEOUT on
@@ -107,7 +125,26 @@ module Ask
           end
 
           def path
-            @path || ENV['ASK_WEB_FETCH_CHROME_PATH'] || DEFAULT_PATHS.find { |p| File.exist?(p) }
+            @path || ENV['ASK_WEB_FETCH_BROWSER_PATH'] || ENV['ASK_WEB_FETCH_CHROME_PATH'] ||
+              BRAVE_PATHS.find { |p| File.exist?(p) } ||
+              DEFAULT_PATHS.find { |p| File.exist?(p) }
+          end
+
+          # A fresh random viewport for each browser launch — a fixed
+          # window size is a fingerprinting signal. Returns { width:,
+          # height: } in the FHD-to-2K range. Override with
+          # Browser.viewport = { width: 1920, height: 1080 } for tests.
+          def viewport
+            @viewport || {
+              width: rand(VIEWPORT_WIDTH_RANGE),
+              height: rand(VIEWPORT_HEIGHT_RANGE)
+            }
+          end
+
+          # True when the configured binary is Brave (fingerprinting-
+          # resistant) rather than stock Chrome/Chromium.
+          def brave?
+            path.to_s.match?(/brave/i)
           end
 
           def cdp_url
@@ -152,11 +189,13 @@ module Ask
           def build_browser
             return AttachedBrowser.new(ws_url_for(cdp_url), timeout: CHALLENGE_TIMEOUT + IDLE_TIMEOUT) if cdp_url
 
+            vp = viewport
             Ferrum::Browser.new(
               browser_path: path,
               headless: true,
               user_data_dir: ENV['ASK_WEB_FETCH_PROFILE'],
-              timeout: CHALLENGE_TIMEOUT + IDLE_TIMEOUT
+              timeout: CHALLENGE_TIMEOUT + IDLE_TIMEOUT,
+              window_size: [vp[:width], vp[:height]]
             )
           end
         end

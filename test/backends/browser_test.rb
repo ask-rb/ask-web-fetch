@@ -155,6 +155,61 @@ describe Ask::WebFetch::Backends::Browser do
     ensure
       ENV['ASK_WEB_FETCH_CHROME_PATH'] = old
     end
+
+    it 'honors ASK_WEB_FETCH_BROWSER_PATH over CHROME_PATH' do
+      Ask::WebFetch::Backends::Browser.path = nil
+      old_browser = ENV['ASK_WEB_FETCH_BROWSER_PATH']
+      old_chrome = ENV['ASK_WEB_FETCH_CHROME_PATH']
+      ENV['ASK_WEB_FETCH_BROWSER_PATH'] = '/custom/brave'
+      ENV['ASK_WEB_FETCH_CHROME_PATH'] = '/custom/chrome'
+
+      _(Ask::WebFetch::Backends::Browser.path).must_equal '/custom/brave'
+    ensure
+      ENV['ASK_WEB_FETCH_BROWSER_PATH'] = old_browser
+      ENV['ASK_WEB_FETCH_CHROME_PATH'] = old_chrome
+    end
+
+    it 'detects Brave binaries as brave?' do
+      Ask::WebFetch::Backends::Browser.path = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'
+
+      _(Ask::WebFetch::Backends::Browser.brave?).must_equal true
+    end
+
+    it 'does not mistake Chrome for Brave' do
+      Ask::WebFetch::Backends::Browser.path = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+
+      _(Ask::WebFetch::Backends::Browser.brave?).must_equal false
+    end
+  end
+
+  describe 'viewport' do
+    after do
+      Ask::WebFetch::Backends::Browser.viewport = nil
+    end
+
+    it 'returns a random viewport in the FHD-to-2K range' do
+      vp = Ask::WebFetch::Backends::Browser.viewport
+
+      _(vp[:width]).must_be :>=, 1920
+      _(vp[:width]).must_be :<=, 2560
+      _(vp[:height]).must_be :>=, 1080
+      _(vp[:height]).must_be :<=, 1440
+    end
+
+    it 'varies across calls (fingerprinting resistance)' do
+      viewports = 10.times.map { Ask::WebFetch::Backends::Browser.viewport = nil; Ask::WebFetch::Backends::Browser.viewport }
+      unique = viewports.uniq
+
+      _(unique.size).must_be :>, 1
+    ensure
+      Ask::WebFetch::Backends::Browser.viewport = nil
+    end
+
+    it 'honors an explicit viewport override' do
+      Ask::WebFetch::Backends::Browser.viewport = { width: 1280, height: 720 }
+
+      _(Ask::WebFetch::Backends::Browser.viewport).must_equal({ width: 1280, height: 720 })
+    end
   end
 
   describe 'ws_url_for' do
