@@ -54,9 +54,11 @@ module Ask
         # How often to poll for the challenge to clear.
         POLL_INTERVAL = 0.5
 
-        # Brave paths first — Brave's fingerprinting resistance (canvas,
-        # WebGL, audio randomization) makes it harder for Cloudflare/
-        # DataDome to flag automation than stock Chrome/Chromium.
+        # Brave paths — Brave's fingerprinting resistance (canvas, WebGL,
+        # audio randomization) helps against Cloudflare/DataDome, but
+        # benchmarks show Chrome renders SPAs (reddit) more reliably.
+        # Chrome is preferred; Brave is the fallback. Override either
+        # with ASK_WEB_FETCH_BROWSER_PATH.
         BRAVE_PATHS = [
           '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
           '/usr/bin/brave-browser',
@@ -126,8 +128,8 @@ module Ask
 
           def path
             @path || ENV['ASK_WEB_FETCH_BROWSER_PATH'] || ENV['ASK_WEB_FETCH_CHROME_PATH'] ||
-              BRAVE_PATHS.find { |p| File.exist?(p) } ||
-              DEFAULT_PATHS.find { |p| File.exist?(p) }
+              DEFAULT_PATHS.find { |p| File.exist?(p) } ||
+              BRAVE_PATHS.find { |p| File.exist?(p) }
           end
 
           # A fresh random viewport for each browser launch — a fixed
