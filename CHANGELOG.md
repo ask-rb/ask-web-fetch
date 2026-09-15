@@ -1,3 +1,21 @@
+## [0.9.0] — 2026-09-15
+
+### Removed
+
+- **The Crawl4AI backend.** The chain is now `Local, Jina`, with `Browser`
+  appended when Chrome is available. A self-hosted Crawl4AI service is no
+  longer part of how this gem is deployed: it added a Docker dependency and
+  a hop that failed the whole chain when it was down. Nothing else changes —
+  `Ask::WebFetch::Backends::Crawl4Ai`, `CRAWL4AI_URL` and `CRAWL4AI_TOKEN`
+  are gone; the markdown and content filters it inspired stay, and so do
+  their attribution notes.
+
+### Migration
+
+If you set `CRAWL4AI_URL`, remove it. Pages that need a real render are
+covered by Jina, and by the Browser backend when Chrome is installed; to use
+another renderer, put it at the head of `Ask::WebFetch.backends`.
+
 ## [0.8.0] — 2026-09-10
 
 ### Added

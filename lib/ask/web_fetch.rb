@@ -6,7 +6,6 @@ require_relative 'web_fetch/content_filter'
 require_relative 'web_fetch/markdown'
 require_relative 'web_fetch/http'
 require_relative 'web_fetch/backends/local'
-require_relative 'web_fetch/backends/crawl4ai'
 require_relative 'web_fetch/backends/jina'
 require_relative 'web_fetch/backends/browser'
 
@@ -39,17 +38,14 @@ module Ask
     # Error, which recovers on retry.
     DETERMINISTIC = [Ask::WebFetch::FetchError, Ask::WebFetch::NotFoundError, Ask::WebFetch::EmptyContentError].freeze
 
-    # Backend chain, tried in order. Crawl4AI leads when configured
-    # (CRAWL4AI_URL), so a present self-hosted renderer is preferred;
-    # otherwise Local, with Jina as the last resort, and Browser appended
-    # when Chrome is available. Swap or extend for future backends; each
-    # must subclass Ask::WebFetch::Backend and implement #fetch(url).
+    # Backend chain, tried in order: Local first — a direct request is the
+    # fastest route and handles most pages — with Jina as the last resort
+    # and Browser appended when Chrome is available (it renders what plain
+    # requests can't). Swap or extend for other backends; each must
+    # subclass Ask::WebFetch::Backend and implement #fetch(url).
     def self.backends
       @backends ||= begin
         chain = [Ask::WebFetch::Backends::Local, Ask::WebFetch::Backends::Jina]
-        if Ask::WebFetch::Backends::Crawl4Ai.configured?
-          chain.unshift(Ask::WebFetch::Backends::Crawl4Ai)
-        end
         chain << Ask::WebFetch::Backends::Browser if Ask::WebFetch::Backends::Browser.configured?
         chain
       end

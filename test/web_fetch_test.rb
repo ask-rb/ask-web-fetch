@@ -8,8 +8,8 @@ describe Ask::WebFetch do
       WebMock.disable_net_connect!
       Ask::WebFetch.backends = nil
       Ask::WebFetch::Backends::Browser.path = ''
-      # Local's HTTP is the seam (see StubHttp in test_helper); Jina and
-      # Crawl4AI still run over Net::HTTP, so they keep WebMock stubs.
+      # Local's HTTP is the seam (see StubHttp in test_helper); Jina runs
+      # over Net::HTTP, so it keeps WebMock stubs.
       @original_local_http = Ask::WebFetch::Backends::Local.http
       @local_http = StubHttp.new { raise 'unexpected local request' }
       Ask::WebFetch::Backends::Local.http = @local_http
@@ -17,7 +17,6 @@ describe Ask::WebFetch do
 
     after do
       Ask::WebFetch.backends = nil
-      Ask::WebFetch::Backends::Crawl4Ai.url = nil
       Ask::WebFetch::Backends::Browser.path = nil
       Ask::WebFetch::Backends::Local.http = @original_local_http
       WebMock.reset!
@@ -27,18 +26,10 @@ describe Ask::WebFetch do
       @local_http.handler = handler
     end
 
-    it 'defaults to Local then Jina when Crawl4AI and Browser are not configured' do
+    it 'defaults to Local then Jina when Browser is not configured' do
       chain = Ask::WebFetch.backends
 
       _(chain).must_equal [Ask::WebFetch::Backends::Local, Ask::WebFetch::Backends::Jina]
-    end
-
-    it 'leads with Crawl4AI when it is configured' do
-      Ask::WebFetch::Backends::Crawl4Ai.url = 'http://crawl4ai.test'
-      chain = Ask::WebFetch.backends
-
-      _(chain.first).must_equal Ask::WebFetch::Backends::Crawl4Ai
-      _(chain).must_include Ask::WebFetch::Backends::Local
     end
 
     it 'appends Browser last when Chrome is available' do
@@ -48,39 +39,7 @@ describe Ask::WebFetch do
       _(chain.last).must_equal Ask::WebFetch::Backends::Browser
     end
 
-    it 'prefers crawl4ai when it is configured and succeeds' do
-      Ask::WebFetch::Backends::Crawl4Ai.url = 'http://crawl4ai.test'
-      crawl_body = {
-        success: true,
-        results: [
-          {
-            url: 'https://example.com',
-            success: true,
-            markdown: { fit_markdown: 'Crawl4AI rendered markdown. ' * 10, raw_markdown: '' },
-            metadata: { title: 'Rendered Page' }
-          }
-        ]
-      }.to_json
-      stub_request(:post, 'http://crawl4ai.test/crawl').to_return(status: 200, body: crawl_body)
 
-      markdown = Ask::WebFetch.fetch('https://example.com')
-
-      _(markdown).must_include '# Rendered Page'
-      _(markdown).must_include 'Crawl4AI rendered markdown.'
-      assert_not_requested :get, 'https://example.com'
-    end
-
-    it 'falls through to local when crawl4ai is configured but down' do
-      Ask::WebFetch::Backends::Crawl4Ai.url = 'http://crawl4ai.test'
-      stub_request(:post, 'http://crawl4ai.test/crawl').to_return(status: 503, body: 'down')
-      body = '<html><head><title>Local Page</title></head><body><article>' \
-             "<p>#{'Plenty of real content for the local backend. ' * 10}</p></article></body></html>"
-      stub_local { |_, _| http_response(200, body) }
-
-      markdown = Ask::WebFetch.fetch('https://example.com')
-
-      _(markdown).must_include '# Local Page'
-    end
 
     it 'uses local when it succeeds and never calls jina' do
       body = '<html><head><title>Local Page</title></head><body><article>' \
@@ -225,7 +184,6 @@ describe Ask::WebFetch do
 
     after do
       Ask::WebFetch.backends = nil
-      Ask::WebFetch::Backends::Crawl4Ai.url = nil
       Ask::WebFetch::Backends::Browser.path = nil
       Ask::WebFetch::Backends::Local.http = @original_local_http
       WebMock.reset!
