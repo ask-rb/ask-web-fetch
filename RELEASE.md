@@ -1,5 +1,8 @@
 # Release Process — ask-web-fetch
 
+Versioning rules (SemVer, patch increments, gemchain releases) live in
+[VERSIONING.md](VERSIONING.md), the canonical versioning policy for this repo.
+
 ## Prerequisites
 
 - All tests pass: `bundle exec rake test`
