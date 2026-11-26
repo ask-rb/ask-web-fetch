@@ -32,6 +32,24 @@ module Ask
   module WebFetch
     DEFAULT_MAX_CHARS = 20_000
 
+    # Coerces an arbitrary string (often an ASCII-8BIT body straight off
+    # the wire) into a valid UTF-8 string. Net::HTTP and httpx hand back
+    # bodies tagged ASCII-8BIT even when the server declared UTF-8, and
+    # every regexp/gsub in this gem assumes UTF-8 — matching a UTF-8
+    # regexp against a BINARY string raises Encoding::CompatibilityError.
+    # Force the label when the bytes are valid UTF-8, scrub otherwise.
+    def self.utf8(str)
+      s = str.to_s
+      if s.encoding == Encoding::UTF_8
+        s.valid_encoding? ? s : s.scrub
+      else
+        u = s.dup.force_encoding(Encoding::UTF_8)
+        u.valid_encoding? ? u : u.scrub
+      end
+    rescue StandardError
+      s.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "\uFFFD")
+    end
+
     # Errors that mean "the URL is dead" — no amount of retrying changes
     # the answer. When EVERY backend failed this way, the aggregate
     # re-raises as FetchError so callers can fail fast; any transient

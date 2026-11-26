@@ -174,7 +174,7 @@ module Ask
             return cdp_url if cdp_url.start_with?('ws://', 'wss://')
 
             version_url = cdp_url.end_with?('/json/version') ? cdp_url : "#{cdp_url.chomp('/')}/json/version"
-            body = Net::HTTP.get(URI(version_url))
+            body = Ask::WebFetch.utf8(Net::HTTP.get(URI(version_url)))
             JSON.parse(body)['webSocketDebuggerUrl']
           rescue Errno::ECONNREFUSED, SocketError => e
             raise FetchError, "cannot reach CDP endpoint #{version_url}: #{e.message}"
@@ -256,7 +256,7 @@ module Ask
             raise error_class.new("got #{status} at #{url}", status: status)
           end
 
-          body = page.body
+          body = Ask::WebFetch.utf8(page.body)
           if challenge_page?(body)
             raise FetchError, "challenge page at #{url}" if warmed
             raise FetchError, "challenge page at #{url}" unless warm_domain(page, url)

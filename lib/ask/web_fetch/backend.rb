@@ -168,8 +168,9 @@ module Ask
       # even when the stored content is pruned by the ContentFilter. Shared
       # by every backend that holds the page's HTML.
       def outlink_urls(html, base_url)
+        html = Ask::WebFetch.utf8(html)
         Nokogiri::HTML(html).css('a[href]').filter_map do |anchor|
-          href = anchor['href'].to_s.strip
+          href = Ask::WebFetch.utf8(anchor['href']).strip
           next if href.empty? || href.start_with?('javascript:', 'mailto:', 'tel:', '#', 'data:')
 
           uri = URI.join(base_url, href)
@@ -186,8 +187,9 @@ module Ask
       # resolved and scheme-filtered. Same shape as #outlink_urls, one
       # implementation for every backend that lacks the raw HTML.
       def markdown_outlinks(content, base_url)
-        content.to_s.scan(/\]\(([^)\s]+)\)/).filter_map do |match|
-          dest = match[0]
+        content = Ask::WebFetch.utf8(content)
+        content.scan(/\]\(([^)\s]+)\)/).filter_map do |match|
+          dest = Ask::WebFetch.utf8(match[0])
           next if dest.start_with?('javascript:', 'mailto:', 'tel:', '#', 'data:')
 
           uri = URI.join(base_url, dest)
@@ -202,7 +204,7 @@ module Ask
       private
 
       def challenge_page?(body)
-        text = body.to_s
+        text = Ask::WebFetch.utf8(body)
         return false unless text.match?(CHALLENGE_RE)
         # Bare `cf-chl-widget-*` is a Turnstile form widget, not the
         # Cloudflare managed challenge interstitial. The interstitial's
@@ -216,7 +218,7 @@ module Ask
       end
 
       def parked_domain?(body)
-        body.to_s.match?(PARKED_DOMAIN_MARKERS)
+        Ask::WebFetch.utf8(body).match?(PARKED_DOMAIN_MARKERS)
       end
 
       def usable_content?(content)

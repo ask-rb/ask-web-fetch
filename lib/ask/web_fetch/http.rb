@@ -40,9 +40,9 @@ module Ask
 
         Response.new(
           status: response.status,
-          body: response.body.to_s,
-          content_type: response.headers['content-type'].to_s,
-          location: response.headers['location'].to_s
+          body: Ask::WebFetch.utf8(response.body),
+          content_type: Ask::WebFetch.utf8(response.headers['content-type'].to_s),
+          location: Ask::WebFetch.utf8(response.headers['location'].to_s)
         )
       end
 

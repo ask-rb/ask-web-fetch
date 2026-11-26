@@ -68,6 +68,7 @@ module Ask
       end
 
       def filter(markdown)
+        markdown = Ask::WebFetch.utf8(markdown)
         out = +''
         in_fence = false
         in_indented_code = false

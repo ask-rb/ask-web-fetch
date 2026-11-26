@@ -44,7 +44,7 @@ module Ask
       # +citations+ is true, inline links become numbered citations with a
       # trailing References section.
       def generate(html, base_url: '', filter: nil, citations: false)
-        html = html.to_s
+        html = Ask::WebFetch.utf8(html)
         doc = Nokogiri::HTML(html)
         input = filtered(html, doc, filter)
         markdown = ReverseMarkdown.convert(input, unknown_tags: :bypass, github_flavored: true)
@@ -71,7 +71,7 @@ module Ask
         candidate.css('*[id], *[class]').each do |el|
           next if el.equal?(candidate)
 
-          id_cls = [el['id'], el['class']].compact.join(' ')
+          id_cls = [Ask::WebFetch.utf8(el['id']), Ask::WebFetch.utf8(el['class'])].compact.join(' ')
           el.remove if id_cls.match?(NAV_CHROME_RE)
         end
         candidate
@@ -88,6 +88,7 @@ module Ask
       # listing each unique URL once — empty when the markdown had no links.
       # Ported from crawl4ai.
       def convert_links_to_citations(markdown, base_url = '')
+        markdown = Ask::WebFetch.utf8(markdown)
         link_map = {} # url => [number, description]
         parts = []
         last_end = 0
@@ -132,6 +133,7 @@ module Ask
       # runs through this — Local and Browser via generate, Jina and
       # Crawl4AI explicitly — so the same noise rules apply to all.
       def clean(markdown)
+        markdown = Ask::WebFetch.utf8(markdown)
         markdown = NoiseFilter.filter(markdown)
         markdown.gsub(/[ \t]+\n/, "\n")
                 .gsub(/\n{3,}/, "\n\n")

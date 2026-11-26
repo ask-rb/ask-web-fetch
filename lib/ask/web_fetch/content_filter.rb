@@ -170,8 +170,8 @@ module Ask
 
       def class_id_score(node)
         score = 0.0
-        score -= 0.5 if node['class'].to_s.match?(NEGATIVE_PATTERNS)
-        score -= 0.5 if node['id'].to_s.match?(NEGATIVE_PATTERNS)
+        score -= 0.5 if Ask::WebFetch.utf8(node['class']).match?(NEGATIVE_PATTERNS)
+        score -= 0.5 if Ask::WebFetch.utf8(node['id']).match?(NEGATIVE_PATTERNS)
         score
       end
 

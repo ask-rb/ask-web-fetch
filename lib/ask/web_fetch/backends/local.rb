@@ -144,15 +144,17 @@ module Ask
         SHELL_HTML_BYTES = 20_000
 
         def js_app_shell?(body)
-          body.to_s.match?(JS_APP_SHELL_MARKERS) ||
-            (body.to_s.bytesize > SHELL_HTML_BYTES && markdown_visible_chars(body) < SHELL_CONTENT_THRESHOLD)
+          text = Ask::WebFetch.utf8(body)
+          text.match?(JS_APP_SHELL_MARKERS) ||
+            (text.bytesize > SHELL_HTML_BYTES && markdown_visible_chars(text) < SHELL_CONTENT_THRESHOLD)
         end
 
         # A cheap text estimate from the raw HTML (tags stripped) — the
         # "how much did the server actually render" number. Deliberately
         # rough: it only feeds a shell-vs-page heuristic.
         def markdown_visible_chars(body)
-          body.to_s.gsub(/<script[\s\S]*?<\/script>/i, "")
+          text = Ask::WebFetch.utf8(body)
+          text.gsub(/<script[\s\S]*?<\/script>/i, "")
             .gsub(/<style[\s\S]*?<\/style>/i, "")
             .gsub(/<[^>]+>/, " ")
             .gsub(/\s+/, " ").strip.length
@@ -180,7 +182,7 @@ module Ask
         # about itself. The consumer (the crawler's license classifier)
         # maps known markers; unknown signals are ignored there, never here.
         def license_signals(html)
-          doc = Nokogiri::HTML(html)
+          doc = Nokogiri::HTML(Ask::WebFetch.utf8(html))
           selectors = [
             'link[rel~="license"]',
             'meta[name="license"], meta[property="license"]',

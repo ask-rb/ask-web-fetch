@@ -102,7 +102,7 @@ module Ask
           res = http.request(req)
           case res.code
           when '200'
-            res.body.to_s
+            Ask::WebFetch.utf8(res.body)
           when '401', '403'
             raise FetchError, "Crawl4AI auth error (#{res.code})"
           else
@@ -131,8 +131,8 @@ module Ask
             raise(status == 429 || status >= 500 ? ServerError : FetchError, "Crawl4AI got #{status} at #{url}")
           end
 
-          markdown = result.dig('markdown', 'fit_markdown').to_s
-          markdown = result.dig('markdown', 'raw_markdown').to_s if markdown.strip.empty?
+          markdown = Ask::WebFetch.utf8(result.dig('markdown', 'fit_markdown'))
+          markdown = Ask::WebFetch.utf8(result.dig('markdown', 'raw_markdown')) if markdown.strip.empty?
           # The service's markdown bypasses Markdown.generate, so it runs
           # through the same shared clean (noise removal + whitespace) as
           # the converting backends.

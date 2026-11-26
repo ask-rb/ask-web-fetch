@@ -32,8 +32,8 @@ module Ask
           res = http.request(req)
           case res.code
           when '200'
-            body = res.body.to_s
-            raise FetchError, 'challenge page from Jina' if challenge_page?(body)
+          body = Ask::WebFetch.utf8(res.body)
+          raise FetchError, 'challenge page from Jina' if challenge_page?(body)
 
             content = Markdown.clean(body)
             # Jina only sees rendered markdown — outlinks come from its
